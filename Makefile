@@ -1,22 +1,21 @@
-CFLAGS = -Wall -Werror -O
+CFLAGS = -Wall -Werror -O0 -g -mtune=generic
 
 CLEANFILES =	    	\
 	a.out				\
-	demo				\
-	demo.o				\
+	c					\
 	lispm.o				\
 	lispm.s				
 
 .PHONY:	all
-all:	demo
+all:	c
 
 .PHONY:	clean
 clean:;	$(RM) $(CLEANFILES)
 
-demo: lispm.c demo.c
+c: lispm.c c.c
 
-lispm.s: lispm.c symtable.h
-	$(CC) $(CFLAGS) -march=i686 -mtune=i686 -m32 $@
+# lispm.o: lispm.c
+# 	$(CC) -c -Os -march=i686 -mtune=i686 -m32 -fomit-frame-pointer lispm.c -o lispm.o
 
 symtable.h: gen-symtable.c
 	$(CC) $(CFLAGS) gen-symtable.c

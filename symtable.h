@@ -12,15 +12,16 @@
 "CAR\0" \
 "CDR\0" \
 "CONS\0\0\0\0" \
-"SPAWN\0\0\0" \
+"EXIT\0\0\0\0" \
 "CAPI\0\0\0\0" \
-"HALT\0\0\0\0" \
-"DONE\0\0\0\0" \
 "!LEX\0\0\0\0" \
 "!PARSE\0\0" \
 "!EVAL\0\0\0" \
 "!OOM\0\0\0\0" \
 "!INVALID_SYM\0\0\0\0" \
+
+#define TABLE_PREFIX_SIZE 128
+#define HTABLE_OFFSET 512
 
 #define SYM_NIL 0u
 #define SYM_QUOTE 4u
@@ -33,12 +34,10 @@
 #define SYM_CAR 48u
 #define SYM_CDR 52u
 #define SYM_CONS 56u
-#define SYM_SPAWN 64u
+#define SYM_EXIT 64u
 #define SYM_CAPI 72u
-#define SYM_HALT 80u
-#define SYM_DONE 88u
-#define ERR_LEX 96u
-#define ERR_PARSE 104u
-#define ERR_EVAL 112u
-#define ERR_OOM 120u
-#define ERR_INVALID_SYM 128u
+#define ERR_LEX 80u
+#define ERR_PARSE 88u
+#define ERR_EVAL 96u
+#define ERR_OOM 104u
+#define ERR_INVALID_SYM 112u
