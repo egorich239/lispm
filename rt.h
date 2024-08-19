@@ -1,6 +1,7 @@
 #pragma once
 
 /* runtime, for now standard C one */
+#include <stdlib.h>
 #include <setjmp.h>
 
 extern jmp_buf main_try;
@@ -10,6 +11,7 @@ extern jmp_buf main_try;
     if (!(cond)) __builtin_trap();                                             \
   } while (0)
 
+#define SUCCEED() exit(0)
 
 #define TRY(...)                                                               \
   do {                                                                         \
@@ -23,3 +25,4 @@ extern jmp_buf main_try;
 
 /* allocates read-writeable page */
 void* page_alloc(unsigned size);
+

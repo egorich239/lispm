@@ -6,9 +6,6 @@
 #include <sys/stat.h>
 
 #include "lispm.h"
-#include "symprint.h"
-
-extern Sym lispm_start(struct Page *program);
 
 int main(int argc, char *argv[]) {
   if (argc < 2) return 1;
@@ -23,6 +20,5 @@ int main(int argc, char *argv[]) {
   struct Page program;
   program.begin = page_begin;
   program.end = program.begin + stat.st_size;
-  Sym result = lispm_start(&program);
-  lispm_dump(result);
+  lispm_start(&program);
 }

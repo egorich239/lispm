@@ -2,6 +2,75 @@
 #include "rt.h"
 #include "symtable.h"
 
+/* symbol: last two bits encode its kind
+ * - <OFFS> 00: symbol from the table, at '<OFFS> 00' position;
+ * -  <NUM> 10: for tokens that represent decimal representation of bits of
+ * <NUM>;
+ * - <CONS> 01: (CONS car cdr), stored at stack CONS (car) and CONS+1 (cdr)
+ * position;
+ * - <BITS> 11: special marker.
+ */
+typedef unsigned Sym;
+
+#define DEBUG_PRINT 1
+#if DEBUG_PRINT
+#include <stdio.h>
+
+static void lispm_dump(Sym sym);
+#define LOG(fmt, ...) ((void)(fmt))
+// #define DUMP(sym) ((void)(sym))
+#define DUMP(sym) lispm_dump(sym)
+#else
+#include "symprint.h"
+#include <stdio.h>
+#define LOG(fmt, ...) fprintf(stderr, "[%d] " fmt, __LINE__, __VA_ARGS__)
+#define DUMP(sym) lispm_dump(sym)
+#endif
+
+/* is atom? */
+static inline Sym Atom(Sym x) { return !(x & 1u) ? SYM_T : SYM_NIL; }
+/* is literal atom? */
+static inline Sym Literal(Sym x) { return (x & 3u) == 0 ? SYM_T : SYM_NIL; }
+/* is list? */
+static inline Sym List(Sym x) { return (x & 3u) == 1 ? SYM_T : SYM_NIL; }
+/* is unsigned? */
+static inline Sym Unsigned(Sym x) { return (x & 3u) == 2 ? SYM_T : SYM_NIL; }
+/* is special? */
+static inline Sym Special(Sym x) { return (x & 3u) == 3 ? SYM_T : SYM_NIL; }
+
+/* ints */
+static inline Sym MakeUnsigned(unsigned val) {
+  ASSERT(!(val & ~(~0u >> 2)));
+  return (val << 2) | 2;
+}
+static inline unsigned GetUnsigned(Sym val) {
+  ASSERT(Unsigned(val));
+  return val >> 2;
+}
+
+extern const char *STRINGS_TABLE;
+static inline const char *LiteralName(Sym x) {
+  ASSERT(Literal(x));
+  return STRINGS_TABLE + x;
+}
+
+/* specials */
+#define MAKE_SPECIAL(val) (((val) << 2) | 3u)
+
+/* lisp style Eq */
+static inline Sym Eq(Sym x, Sym y) {
+  return Atom(x) && x == y ? SYM_T : SYM_NIL;
+}
+
+/* hash */
+static inline unsigned Djb2(const char *s) {
+  unsigned hash = 5381u;
+  int c;
+  while ((c = *s++))
+    hash = 33 * hash + ((unsigned)c);
+  return hash;
+}
+
 /* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
 #define THROW_UNLESS(cond, err)                                                \
   do {                                                                         \
@@ -63,10 +132,6 @@ static inline int StrEq(const char *n, const char *h) {
     ++n, ++h;
   return *n == *h;
 }
-
-/* The error values are less than HTABLE_OFFSET */
-#define HTABLE_NONE MAKE_SPECIAL(0)
-#define HTABLE_OOM MAKE_SPECIAL(1)
 
 static void InitTable(void);
 static unsigned *Lookup(const char *lit);
@@ -344,7 +409,43 @@ static void lispm_main(struct Page *program) {
   sym = Eval(sym, SYM_NIL);
 }
 
-Sym lispm_start(struct Page *program) {
+__attribute__((noreturn)) void lispm_start(struct Page *program) {
   TRY(lispm_main(program));
-  return sym;
+  DUMP(sym);
+  SUCCEED();
 }
+
+#if DEBUG_PRINT
+static inline void lispm_dump(Sym sym) {
+  static int indent = 0;
+  static int same_line = 0;
+
+  if (!same_line)
+    for (int i = 0; i < indent; ++i)
+      fprintf(stderr, " ");
+  same_line = 0;
+
+  if (Unsigned(sym)) {
+    fprintf(stderr, "%u\n", sym);
+  } else if (Literal(sym)) {
+    fprintf(stderr, "%s\n", LiteralName(sym));
+  } else if (Special(sym)) {
+    fprintf(stderr, "<special %x>\n", sym);
+  } else {
+    fprintf(stderr, "(");
+    indent += 2;
+    same_line = 1;
+    while (List(sym)) {
+      lispm_dump(STACK[sym >> 2]);
+      sym = STACK[(sym >> 2) + 1];
+    }
+    if (sym) {
+      lispm_dump(sym);
+    }
+    indent -= 2;
+    for (int i = 0; i < indent; ++i)
+      fprintf(stderr, " ");
+    fprintf(stderr, sym ? "!)\n" : ")\n");
+  }
+}
+#endif
