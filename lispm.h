@@ -8,6 +8,13 @@
 #define PAGE_ALIGN_LOG2 12
 #define PAGE_ALIGN (1 << PAGE_ALIGN_LOG2)
 
+/* Page must be aligned to PAGE_ALIGN.
+ */
+struct Page {
+  char* begin;
+  char* end;
+};
+
 #define TABLE_SIZE 0x100000u
 _Static_assert((TABLE_SIZE & 4095) == 0,
                "main table size must be proportional to 4K pages");

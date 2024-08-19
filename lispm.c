@@ -12,10 +12,11 @@
   } while (0)
 
 /* state */
-static unsigned pc; /* program text counter */
-static unsigned sp; /* stack pointer, grows down */
-static unsigned tp; /* table pointer, grows up */
-static Sym sym;     /* adjusted by lexer, parser, and eval */
+static struct Page program_page;
+static const char *pc; /* program text counter */
+static unsigned sp;    /* stack pointer, grows down */
+static unsigned tp;    /* table pointer, grows up */
+static Sym sym;        /* adjusted by lexer, parser, and eval */
 
 /* list routines */
 
@@ -156,8 +157,8 @@ static char TOKEN[TOKEN_SIZE];
 static void Lex(void) {
   unsigned c;
   do
-    THROW_UNLESS(pc < TABLE_SIZE, ERR_LEX);
-  while ((c = TABLE[pc++]) <= ' ');
+    THROW_UNLESS(pc < program_page.end, ERR_LEX);
+  while ((c = *pc++) <= ' ');
 
   switch (c) {
   case '(':
@@ -195,8 +196,8 @@ static void Lex(void) {
       /* not an integer literal */
       token_val = TOKEN_VAL_NONE;
     }
-    THROW_UNLESS(pc < TABLE_SIZE, ERR_LEX);
-  } while ((c = TABLE[pc++]) > ')');
+    THROW_UNLESS(pc < program_page.end, ERR_LEX);
+  } while ((c = *pc++) > ')');
   --pc;
 
   if (token_val != TOKEN_VAL_NONE) {
@@ -230,9 +231,14 @@ static void ParseObject(void) {
       break;
     case TOK_RPAREN:
       li = SYM_NIL;
-      while ((car = PARSE_STACK[--parse_stack_depth]) != TOK_LPAREN)
+      do {
+        THROW_UNLESS(parse_stack_depth, ERR_PARSE);
+        if ((car = PARSE_STACK[--parse_stack_depth]) == TOK_LPAREN) break;
         li = Cons(car, li);
+      } while (1);
+      
       /* put result _under_ the position of oparen */
+      THROW_UNLESS(parse_stack_depth, ERR_PARSE);
       PARSE_STACK[--parse_stack_depth] = li;
       break;
     default:
@@ -369,14 +375,13 @@ static void lispm_main(Sym a) {
   // }
 }
 
-Sym lispm_start(void) {
-  Lookup("/0");
-  LOG("symbol %u", sym);
+#define TAR_CONTENT_OFFSET 512u
+
+Sym lispm_start(struct Page *program) {
+  program_page = *program;
 
   Sym a = SYM_NIL;
-  while ((pc = HiddenStateOfSym() << PAGE_ALIGN_LOG2)) {
-    TRY(lispm_main(a));
-    break;
-  }
+  pc = program->begin + TAR_CONTENT_OFFSET;
+  TRY(lispm_main(a));
   return sym;
 }

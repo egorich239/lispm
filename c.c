@@ -1,6 +1,9 @@
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 #include "lispm.h"
 #include "symprint.h"
@@ -11,16 +14,22 @@ Sym STACK[STACK_SIZE];
 
 extern void Update(const char *lit, const char *hidden, unsigned align);
 extern void lispm_init(void);
-extern Sym lispm_start(void);
+extern Sym lispm_start(struct Page *program);
 
-static char TEXT[1048576];
+int main(int argc, char *argv[]) {
+  if (argc < 2) return 1;
 
-int main() {
-  int r = fread(TEXT, 1, sizeof(TEXT) - 1, stdin);
-  if (r < 0) return r;
+  int fd = open(argv[1], O_RDONLY);
+  struct stat stat;
+  if (fd < 0 || fstat(fd, &stat) < 0) return 1;
 
+  void *page_begin = mmap(NULL, stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  if (!page_begin) return 1;
+
+  struct Page program;
+  program.begin = page_begin;
+  program.end = program.begin + stat.st_size;
   lispm_init();
-  Update("/0", TEXT, PAGE_ALIGN_LOG2);
-  Sym result = lispm_start();
+  Sym result = lispm_start(&program);
   lispm_dump(result);
 }
