@@ -13,8 +13,7 @@ static const char *SYMS[] = {
     "CAR",          //
     "CDR",          //
     "CONS",         //
-    "EXIT",         //
-    "CAPI",         //
+    "STR",          //
     "!LEX",         //
     "!PARSE",       //
     "!EVAL",        //
@@ -38,7 +37,7 @@ int main() {
     while (offs & 3);
     print("\" \\\n");
   }
-  fprintf(stdout, "#define HTABLE_OFFSET %u\n\n", (offs + 511) & ~511u);
+  fprintf(stdout, "\n#define HTABLE_OFFSET %u\n\n", (offs + 511) & ~511u);
 
   offs = 0;
   for (unsigned i = 0; i < SYMS_SIZE; ++i) {

@@ -11,7 +11,6 @@
 
 __attribute__((aligned(PAGE_ALIGN))) char TABLE[TABLE_SIZE] = TABLE_PREFIX;
 
-extern void lispm_init(void);
 extern Sym lispm_start(struct Page *program);
 
 int main(int argc, char *argv[]) {
@@ -27,7 +26,6 @@ int main(int argc, char *argv[]) {
   struct Page program;
   program.begin = page_begin;
   program.end = program.begin + stat.st_size;
-  lispm_init();
   Sym result = lispm_start(&program);
   lispm_dump(result);
 }

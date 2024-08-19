@@ -308,9 +308,6 @@ static Sym Eval(Sym e, Sym a) {
 
   unsigned high_mark = sp;
   switch (car) {
-  case SYM_EXIT:
-    /* TODO: implement */
-    THROW_UNLESS(0, ERR_EVAL);
   case SYM_QUOTE:
     return Car(cdr);
   case SYM_ATOM:
@@ -351,9 +348,7 @@ static Sym Eval(Sym e, Sym a) {
   return e;
 }
 
-void lispm_init(void) {}
-
-static void lispm_main(Sym a) {
+static void lispm_main(void) {
   InitStack();
   InitTable();
 
@@ -361,9 +356,7 @@ static void lispm_main(Sym a) {
 
   LOG("parse result:%s\n", "");
   DUMP(sym);
-  LOG("context:%s\n", "");
-  DUMP(a);
-  sym = Eval(sym, a);
+  sym = Eval(sym, SYM_NIL);
 }
 
 #define TAR_CONTENT_OFFSET 512u
@@ -371,8 +364,7 @@ static void lispm_main(Sym a) {
 Sym lispm_start(struct Page *program) {
   program_page = *program;
 
-  Sym a = SYM_NIL;
   pc = program->begin + TAR_CONTENT_OFFSET;
-  TRY(lispm_main(a));
+  TRY(lispm_main());
   return sym;
 }
