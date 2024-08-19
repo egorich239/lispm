@@ -12,7 +12,6 @@
 __attribute__((aligned(PAGE_ALIGN))) char TABLE[TABLE_SIZE] = TABLE_PREFIX;
 Sym STACK[STACK_SIZE];
 
-extern void Update(const char *lit, const char *hidden, unsigned align);
 extern void lispm_init(void);
 extern Sym lispm_start(struct Page *program);
 

@@ -236,7 +236,7 @@ static void ParseObject(void) {
         if ((car = PARSE_STACK[--parse_stack_depth]) == TOK_LPAREN) break;
         li = Cons(car, li);
       } while (1);
-      
+
       /* put result _under_ the position of oparen */
       THROW_UNLESS(parse_stack_depth, ERR_PARSE);
       PARSE_STACK[--parse_stack_depth] = li;
@@ -366,13 +366,6 @@ static void lispm_main(Sym a) {
   LOG("context:%s\n", "");
   DUMP(a);
   sym = Eval(sym, a);
-
-  // if (Car(res) == SYM_EXIT) {
-  //   /* (EXIT /CONT p1 p2 p3) */
-  //   sym = Cadr(res);
-  //   Lookup();
-  //   a = Cddr(res);
-  // }
 }
 
 #define TAR_CONTENT_OFFSET 512u
