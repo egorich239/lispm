@@ -1,33 +1,152 @@
 (LET 
     (
-        (@MAP (QUOTE (LAMBDA (FN LI)
+        (nil (QUOTE ()))
+        (true (QUOTE T))
+        
+        (not (QUOTE (LAMBDA (x)
             (COND
-                ((EQ (QUOTE ()) LI) (QUOTE ()))
-                ((QUOTE T) (CONS
-                    (FN (CAR LI))
-                    (@MAP FN (CDR LI))
+                ((EQ nil x) true)
+                (true nil)
+            )
+        )))
+        (and (QUOTE (LAMBDA (x y)
+            (COND
+                ((EQ nil x) nil)
+                ((EQ nil y) nil)
+                (true true)
+            )
+        )))
+        (or (QUOTE (LAMBDA (x y)
+            (COND
+                ((EQ nil x) (and y true))
+                (true true)
+            )
+        )))
+
+        (cadr (QUOTE (LAMBDA (seq) (CAR (CDR seq)))))
+        (cddr (QUOTE (LAMBDA (seq) (CDR (CDR seq)))))
+
+        (pair (QUOTE (LAMBDA (x y) (CONS x y))))
+        (fst (QUOTE (LAMBDA (p) (CAR p))))
+        (snd (QUOTE (LAMBDA (p) (CDR p))))
+
+        (map (QUOTE (LAMBDA (fn seq)
+            (COND
+                ((EQ nil seq) nil)
+                (true (CONS
+                    (fn (CAR seq))
+                    (map fn (CDR seq))
                 ))
             )
         )))
 
-        (@Q (QUOTE (LAMBDA (X) 
+        (foldl (QUOTE (LAMBDA (fn acc seq)
             (COND
-                ((ATOM X) X)
-                ((QUOTE T)
-                    (CONS (QUOTE QUOTE)
-                    (CONS (@MAP @Q X) (QUOTE ()))))
+                ((EQ nil seq) acc)
+                (true (foldl fn (fn (CAR seq) acc) (CDR seq)))
             )
         )))
+
+        (foldr (QUOTE (LAMBDA (fn acc seq)
+            (COND
+                ((EQ nil seq) acc)
+                (true (fn (CAR seq) (foldr fn acc (CDR seq))))
+            )
+        )))
+
+        (reverse (QUOTE (LAMBDA (seq)
+            (foldl (QUOTE CONS) nil seq)
+        )))
+
+        (scan-while (QUOTE (LAMBDA (cond body seq)
+            (LET 
+                (
+                    (impl (QUOTE (LAMBDA (cond body seq acc)
+                        (COND
+                            ((not (cond seq)) (pair acc seq))
+                            (true (LET
+                                (
+                                    (res (body seq))
+                                    (acc. (CONS (fst res) acc))
+                                    (seq. (snd res))
+                                )
+                                (impl cond body seq. acc.)
+                            ))
+                        ))))
+                    (res (impl cond body seq nil))
+                )
+                (pair (fst res) (snd res))
+            )
+        )))
+        
+        (parse-mul (QUOTE (LAMBDA (seq)
+            (COND
+                ((ATOM (CAR seq)) (LET
+                    (
+                        (cond (QUOTE (LAMBDA (seq.)
+                            (or
+                                (EQ (QUOTE *) (CAR seq.))
+                                (or 
+                                    (EQ (QUOTE div) (CAR seq.))
+                                    (EQ (QUOTE mod) (CAR seq.)))
+                            ))))
+                        (body (QUOTE (LAMBDA (seq.)
+                            (COND
+                                ((ATOM (cadr seq.)) (CONS (pair (CAR seq.) (cadr seq.)) (cddr seq)))
+                            )
+                        )))
+                        (x (CAR seq))
+                        (xs (scan-while cond body (CDR seq)))
+                        (expr (QUOTE (LAMBDA (l r)
+                            (CONS (fst r) (CONS l (CONS r nil)))
+                        )))
+                    )
+                    xs
+
+                ))
+            )
+        )))
+
+
     )
 
-    (@Q (QUOTE (A (B C))))
+    (parse-mul (QUOTE (A C (QUOTE *) C)))
+
 )
-    (@MAP (QUOTE (LAMBDA (X) (CONS X X))) (QUOTE (1 2 3)))
+                    (foldl expr x xs)
+
+        (qq (QUOTE (LAMBDA (x) 
+            (COND
+                ((ATOM x) x)
+                ((QUOTE T)
+                    (CONS (QUOTE QUOTE)
+                    (CONS (map qq x) (QUOTE ()))))
+            )
+        )))
 
 
+(TOK (CAR X))
+                    (CONT (CDR X))
+                    (EOF (not CONT))
+    (qq (QUOTE (A (B C))))
+    (map (QUOTE (LAMBDA (X) (CONS X X))) (QUOTE (1 2 3)))
+
+a + b:
+let 
+    :0 (get :m (addr :frame a))
+    :1 (get :m (addr :frame b))
+in
+    (:add :0 :1)
+
+foo->x[4] + b:
+let 
+    :0 (addr :frame foo)
+    :1 (offs :0 :TypeOfFoo.x 1)
+    :2 (offs :1 :uint32_t 4)
+...
 
     ;; (ID (QUOTE (A B C)))
-    (@Q (QUOTE ( ABC DEF GHI)))
+    (qq (QUOTE ( ABC DEF GHI)))
 
         (ID (QUOTE (LAMBDA (X)
             (COND
@@ -61,7 +180,7 @@
         ((EQ (QUOTE ()) (QUOTE (A B C)) ) ())
         ((QUOTE T) (CONS
                     (FN (CAR LI))
-                    (@MAP (CDR LI))
+                    (map (CDR LI))
                 ))
             )
 
