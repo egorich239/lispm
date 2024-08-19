@@ -8,9 +8,27 @@
  * <NUM>;
  * - <CONS> 01: (CONS car cdr), stored at stack CONS (car) and CONS+1 (cdr)
  * position;
- * - <BITS> 11: special marker.
+ * - <PAGE> 11: page defined at <PAGE> offset of the page table;
+ * - 11..11 11: no value marker in hash table.
  */
 typedef unsigned Sym;
+
+/* state */
+static struct Page *PAGE_TABLE;
+#define PAGE_PROGRAM 0u
+#define PAGE_STRINGS 1u
+
+/* program text counter */
+static const char *PC;
+
+/* the hash table */
+static unsigned *STRINGS_INDEX;
+static char *STRINGS_TABLE;
+static unsigned TP;
+
+/* the execution stack */
+static Sym *STACK;
+static unsigned SP; /* grows down */
 
 #define DEBUG_PRINT 1
 #if DEBUG_PRINT
@@ -48,7 +66,6 @@ static inline unsigned GetUnsigned(Sym val) {
   return val >> 2;
 }
 
-extern const char *STRINGS_TABLE;
 static inline const char *LiteralName(Sym x) {
   ASSERT(Literal(x));
   return STRINGS_TABLE + x;
@@ -80,37 +97,21 @@ static inline unsigned Djb2(const char *s) {
     }                                                                          \
   } while (0)
 
-/* state */
-static struct Page *page_table;
-#define PAGE_PROGRAM 0u
-#define PAGE_STRINGS 1u
-
-static const char *pc; /* program text counter */
-
-Sym *STACK;
-static unsigned sp; /* stack pointer, grows down */
-
-static char *STRINGS_TABLE_W;
-const char *STRINGS_TABLE;
-static unsigned tp; /* table pointer, grows up */
-
-static unsigned *HTABLE;
-
 static Sym sym; /* adjusted by lexer, parser, and eval */
 
 /* list routines */
 static inline void InitStack(void) {
   STACK = page_alloc(STACK_SIZE * sizeof(Sym));
-  sp = STACK_SIZE;
+  SP = STACK_SIZE;
   THROW_UNLESS(STACK, ERR_OOM);
 }
 
 /* list constructor */
 static inline Sym Cons(Sym car, Sym cdr) {
-  THROW_UNLESS(sp & ~3u, ERR_OOM);
-  STACK[--sp] = cdr;
-  STACK[--sp] = car;
-  return (sp << 2) | 1;
+  THROW_UNLESS(SP & ~3u, ERR_OOM);
+  STACK[--SP] = cdr;
+  STACK[--SP] = car;
+  return (SP << 2) | 1;
 }
 
 static inline Sym Car(Sym a) {
@@ -139,11 +140,11 @@ static Sym Insert(const char *lit, unsigned value, int allow_existing);
 
 static const char TABLE_INIT[] = TABLE_PREFIX;
 static void InitTable(void) {
-  STRINGS_TABLE = STRINGS_TABLE_W = page_alloc(STRINGS_SIZE);
-  HTABLE = page_alloc(HTABLE_SIZE * 2 * sizeof(unsigned));
-  THROW_UNLESS(STRINGS_TABLE && HTABLE, ERR_OOM);
+  STRINGS_TABLE = page_alloc(STRINGS_SIZE);
+  STRINGS_INDEX = page_alloc(HTABLE_SIZE * 2 * sizeof(unsigned));
+  THROW_UNLESS(STRINGS_TABLE && STRINGS_INDEX, ERR_OOM);
 
-  tp = 0;
+  TP = 0;
   for (unsigned t = 0; t < sizeof(TABLE_INIT); ++t) {
     if (!TABLE_INIT[t]) continue;
     Sym key = Insert(TABLE_INIT + t, 0, 0);
@@ -152,11 +153,11 @@ static void InitTable(void) {
       ;
     --t;
   }
-  ASSERT(tp + 1 == sizeof(TABLE_INIT));
+  ASSERT(TP + 1 == sizeof(TABLE_INIT));
   Insert("PROGRAM", PAGE_PROGRAM, 0);
   Insert("STRINGS", PAGE_STRINGS, 0);
-  page_table[PAGE_STRINGS] = (struct Page){
-      .begin = STRINGS_TABLE_W, .end = STRINGS_TABLE_W + STRINGS_SIZE};
+  PAGE_TABLE[PAGE_STRINGS] = (struct Page){.begin = STRINGS_TABLE,
+                                           .end = STRINGS_TABLE + STRINGS_SIZE};
 }
 
 static unsigned *Lookup(const char *lit) {
@@ -166,12 +167,12 @@ static unsigned *Lookup(const char *lit) {
   LOG("looking for %s starting at %u\n", lit, offset);
   do {
     offset &= (HTABLE_SIZE - 1);
-    entry = HTABLE + (2 * offset);
+    entry = STRINGS_INDEX + (2 * offset);
     if (!*entry) {
       /* empty slot */
       return entry;
     }
-    if (StrEq(lit, STRINGS_TABLE_W + *entry)) return entry; /* found! */
+    if (StrEq(lit, STRINGS_TABLE + *entry)) return entry; /* found! */
   } while (++offset != end_offset);
   return 0;
 }
@@ -182,13 +183,13 @@ Sym Insert(const char *lit, unsigned value, int allow_existing) {
   if (allow_existing && *entry) return *entry;
 
   THROW_UNLESS(!*entry, ERR_EVAL);
-  entry[0] = tp;
+  entry[0] = TP;
   entry[1] = value;
   do
-    THROW_UNLESS(tp < STRINGS_SIZE, ERR_OOM);
-  while ((STRINGS_TABLE_W[tp++] = *lit++));
-  tp += 3u;
-  tp &= ~3u;
+    THROW_UNLESS(TP < STRINGS_SIZE, ERR_OOM);
+  while ((STRINGS_TABLE[TP++] = *lit++));
+  TP += 3u;
+  TP &= ~3u;
   LOG("inserted symbol %u: %s\n", sym, LiteralName(sym));
   return entry[0];
 }
@@ -203,8 +204,8 @@ static char TOKEN[TOKEN_SIZE];
 static void Lex(void) {
   unsigned c;
   do
-    THROW_UNLESS(pc < page_table[PAGE_PROGRAM].end, ERR_LEX);
-  while ((c = *pc++) <= ' ');
+    THROW_UNLESS(PC < PAGE_TABLE[PAGE_PROGRAM].end, ERR_LEX);
+  while ((c = *PC++) <= ' ');
 
   switch (c) {
   case '(':
@@ -242,9 +243,9 @@ static void Lex(void) {
       /* not an integer literal */
       token_val = TOKEN_VAL_NONE;
     }
-    THROW_UNLESS(pc < page_table[PAGE_PROGRAM].end, ERR_LEX);
-  } while ((c = *pc++) > ')');
-  --pc;
+    THROW_UNLESS(PC < PAGE_TABLE[PAGE_PROGRAM].end, ERR_LEX);
+  } while ((c = *PC++) > ')');
+  --PC;
 
   if (token_val != TOKEN_VAL_NONE) {
     sym = MakeUnsigned(token_val);
@@ -350,7 +351,7 @@ static Sym Eval(Sym e, Sym a) {
 
   Sym car = Car(e), cdr = Cdr(e);
 
-  unsigned high_mark = sp;
+  unsigned high_mark = SP;
   switch (car) {
   case SYM_QUOTE:
     return Car(cdr);
@@ -384,9 +385,9 @@ static Sym Eval(Sym e, Sym a) {
       THROW_UNLESS(0, ERR_EVAL);
   }
 
-  unsigned low_mark = sp;
+  unsigned low_mark = SP;
   e = Gc(e, (high_mark << 2) | 1, (high_mark - low_mark) << 2);
-  const unsigned lowest_mark = sp;
+  const unsigned lowest_mark = SP;
   while (lowest_mark < low_mark)
     STACK[--high_mark] = STACK[--low_mark];
   return e;
@@ -394,10 +395,10 @@ static Sym Eval(Sym e, Sym a) {
 
 #define TAR_CONTENT_OFFSET 512u
 static void lispm_main(struct Page *program) {
-  page_table = page_alloc(PAGE_TABLE_SIZE);
-  THROW_UNLESS(page_table, ERR_OOM);
-  page_table[PAGE_PROGRAM] = *program;
-  pc = program->begin + TAR_CONTENT_OFFSET;
+  PAGE_TABLE = page_alloc(PAGE_TABLE_SIZE);
+  THROW_UNLESS(PAGE_TABLE, ERR_OOM);
+  PAGE_TABLE[PAGE_PROGRAM] = *program;
+  PC = program->begin + TAR_CONTENT_OFFSET;
 
   InitStack();
   InitTable();
