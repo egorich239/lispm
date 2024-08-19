@@ -68,8 +68,6 @@ typedef unsigned Sym;
 
 /* stack */
 #define STACK_SIZE 0x10000u
-extern unsigned stack_pointer;
-extern Sym STACK[];
 
 /* capi callback, if present */
 extern Sym (*lispm_capi)(Sym (*eval)(Sym, Sym), Sym, Sym);

@@ -10,7 +10,6 @@
 #include "symtable.h"
 
 __attribute__((aligned(PAGE_ALIGN))) char TABLE[TABLE_SIZE] = TABLE_PREFIX;
-Sym STACK[STACK_SIZE];
 
 extern void lispm_init(void);
 extern Sym lispm_start(struct Page *program);

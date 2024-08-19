@@ -18,3 +18,6 @@ extern jmp_buf main_try;
   do {                                                                         \
     if (!(cond)) __builtin_trap();                                             \
   } while (0)
+
+/* allocates read-writeable page */
+void* page_alloc(unsigned size);

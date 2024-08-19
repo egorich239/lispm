@@ -3,6 +3,8 @@
 #include "lispm.h"
 #include <stdio.h>
 
+extern Sym* STACK;
+
 static inline void lispm_dump(Sym sym) {
   static int indent = 0;
   static int same_line = 0;

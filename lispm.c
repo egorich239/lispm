@@ -14,15 +14,21 @@
 /* state */
 static struct Page program_page;
 static const char *pc; /* program text counter */
-static unsigned sp;    /* stack pointer, grows down */
-static unsigned tp;    /* table pointer, grows up */
-static Sym sym;        /* adjusted by lexer, parser, and eval */
+
+Sym *STACK;
+static unsigned sp; /* stack pointer, grows down */
+
+static unsigned tp; /* table pointer, grows up */
+static Sym sym;     /* adjusted by lexer, parser, and eval */
 
 /* list routines */
+static inline void InitStack(void) {
+  STACK = page_alloc(STACK_SIZE * sizeof(Sym));
+  sp = STACK_SIZE;
+  THROW_UNLESS(STACK, ERR_OOM);
+}
 
 /* list constructor */
-static inline void InitStack(void) { sp = STACK_SIZE; }
-
 static inline Sym Cons(Sym car, Sym cdr) {
   THROW_UNLESS(sp & ~3u, ERR_OOM);
   STACK[--sp] = cdr;
@@ -345,14 +351,11 @@ static Sym Eval(Sym e, Sym a) {
   return e;
 }
 
-void lispm_init(void) {
-  InitStack();
-  InitTable();
-}
+void lispm_init(void) {}
 
 static void lispm_main(Sym a) {
-  LOG("found file %s at offset %u\n", LiteralName(sym), pc);
-  LOG("content:\n%s\n\n", TABLE + pc);
+  InitStack();
+  InitTable();
 
   ParseObject();
 
