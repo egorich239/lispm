@@ -3,58 +3,21 @@
 #include "rt.h"
 #include "symtable.h"
 
-#define PAGE_ALIGN_LOG2 12
-#define PAGE_ALIGN (1 << PAGE_ALIGN_LOG2)
-
-/* Page must be aligned to PAGE_ALIGN.
- */
+/* Page must be aligned to CPU page size */
 struct Page {
   char *begin;
   char *end;
 };
 
-#define TABLE_SIZE 0x100000u
-_Static_assert((TABLE_SIZE & 4095) == 0,
+#define PAGE_TABLE_SIZE 1024u
+
+#define STRINGS_SIZE 0x100000u
+_Static_assert(!(STRINGS_SIZE & 4095),
                "main table size must be proportional to 4K pages");
 
-/* L64 integers are 4-byte char sequences, that are interpreted as integers.
- *
- * Each byte is considered a 64-base digit (c % 64).
- *
- * The canonical representation of digits consists of chars in [32; 95] range.
- * An important property of the numbers is that NUL char maps to digit 0,
- * so that L64 int is zero for NULx4 sequence.
- */
-#define L64_CSIZE 4
-#define L64_MAX ((1u << 24) - 1u)
-
-static inline unsigned FromL64(const char *c) {
-  unsigned acc = 0;
-  for (int i = 0; i < L64_CSIZE; ++i) {
-    const unsigned d = ((unsigned)c[i]) & 63;
-    acc <<= 6;
-    acc += d;
-  }
-  return acc;
-}
-
-static inline void ToL64(char *target, unsigned v) {
-  for (int i = 0; i < L64_CSIZE; ++i) {
-    const unsigned d = (v & 63);
-    v >>= 6;
-    target[L64_CSIZE - 1 - i] = (d < 32) ? d + 64 : d;
-  }
-  ASSERT(!v);
-}
-
-/* we expect TABLE initialized with TABLE_PREFIX from symtable.h */
-extern char TABLE[];
-
-#define HTABLE_SIZE 1024u
-_Static_assert((HTABLE_SIZE & (HTABLE_SIZE - 1)) == 0,
+#define HTABLE_SIZE 1048576u
+_Static_assert(!(HTABLE_SIZE & (HTABLE_SIZE - 1)),
                "hash table size must be a power of two");
-_Static_assert(HTABLE_OFFSET + 2 * L64_CSIZE <= TABLE_SIZE,
-               "main table is too small");
 
 /* symbol: last two bits encode its kind
  * - <OFFS> 00: symbol from the table, at '<OFFS> 00' position;
@@ -93,9 +56,10 @@ static inline unsigned GetUnsigned(Sym val) {
   return val >> 2;
 }
 
+extern const char *STRINGS_TABLE;
 static inline const char *LiteralName(Sym x) {
   ASSERT(Literal(x));
-  return TABLE + x;
+  return STRINGS_TABLE + x;
 }
 
 /* specials */

@@ -37,7 +37,7 @@ int main() {
     while (offs & 3);
     print("\" \\\n");
   }
-  fprintf(stdout, "\n#define HTABLE_OFFSET %u\n\n", (offs + 511) & ~511u);
+  fprintf(stdout, "\n");
 
   offs = 0;
   for (unsigned i = 0; i < SYMS_SIZE; ++i) {

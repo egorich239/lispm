@@ -7,9 +7,6 @@
 
 #include "lispm.h"
 #include "symprint.h"
-#include "symtable.h"
-
-__attribute__((aligned(PAGE_ALIGN))) char TABLE[TABLE_SIZE] = TABLE_PREFIX;
 
 extern Sym lispm_start(struct Page *program);
 

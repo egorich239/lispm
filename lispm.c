@@ -12,14 +12,22 @@
   } while (0)
 
 /* state */
-static struct Page program_page;
+static struct Page *page_table;
+#define PAGE_PROGRAM 0u
+#define PAGE_STRINGS 1u
+
 static const char *pc; /* program text counter */
 
 Sym *STACK;
 static unsigned sp; /* stack pointer, grows down */
 
+static char *STRINGS_TABLE_W;
+const char *STRINGS_TABLE;
 static unsigned tp; /* table pointer, grows up */
-static Sym sym;     /* adjusted by lexer, parser, and eval */
+
+static unsigned *HTABLE;
+
+static Sym sym; /* adjusted by lexer, parser, and eval */
 
 /* list routines */
 static inline void InitStack(void) {
@@ -56,96 +64,68 @@ static inline int StrEq(const char *n, const char *h) {
   return *n == *h;
 }
 
-/* Hash table
- *
- * Hash table entry is simply a pointer to an 8-byte aligned storage of two L64
- * ints.
- *
- * The first word K contains the offset of the literal, its highest L64 bit is
- * set to mark the presence of the entry, the literal is found at TABLE +
- * (masked(K) << 2), where masked(K) = K & (L64_MAX >> 1).
- */
-typedef char *Entry;
-#define HTABLE_ENTRY_SIZE (2u * L64_CSIZE)
-#define HTABLE_ENTRY(k)                                                        \
-  (TABLE + HTABLE_OFFSET + HTABLE_ENTRY_SIZE * ((k) & (HTABLE_SIZE - 1)))
-
-/* Return value of:
-   - lexer
-   - parser.
-
-   Both of these functions are non-recursive, which allows us to do that.
-*/
-static Entry entry;
-
-#define HTABLE_MAKE_KEY(s) (((s) >> 2) | (L64_MAX ^ (L64_MAX >> 1)))
-#define HTABLE_GET_SYM(k) (((k) & ~(L64_MAX ^ (L64_MAX >> 1))) << 2)
-
 /* The error values are less than HTABLE_OFFSET */
 #define HTABLE_NONE MAKE_SPECIAL(0)
 #define HTABLE_OOM MAKE_SPECIAL(1)
 
 static void InitTable(void);
-static void Lookup(const char *lit);
-void Update(const char *lit, const char *hidden, int align_log2);
+static unsigned *Lookup(const char *lit);
+static Sym Insert(const char *lit, unsigned value, int allow_existing);
 
+static const char TABLE_INIT[] = TABLE_PREFIX;
 static void InitTable(void) {
+  STRINGS_TABLE = STRINGS_TABLE_W = page_alloc(STRINGS_SIZE);
+  HTABLE = page_alloc(HTABLE_SIZE * 2 * sizeof(unsigned));
+  THROW_UNLESS(STRINGS_TABLE && HTABLE, ERR_OOM);
+
   tp = 0;
-  for (unsigned t = 0; t < HTABLE_OFFSET; ++t) {
-    if (!TABLE[t]) continue;
-    Update(TABLE + t, 0, 2);
-    while (TABLE[t++])
+  for (unsigned t = 0; t < sizeof(TABLE_INIT); ++t) {
+    if (!TABLE_INIT[t]) continue;
+    Sym key = Insert(TABLE_INIT + t, 0, 0);
+    ASSERT(key == t);
+    while (TABLE_INIT[t++])
       ;
     --t;
   }
-  tp = HTABLE_ENTRY(HTABLE_SIZE - 1) + HTABLE_ENTRY_SIZE - TABLE;
+  ASSERT(tp + 1 == sizeof(TABLE_INIT));
+  Insert("PROGRAM", PAGE_PROGRAM, 0);
+  Insert("STRINGS", PAGE_STRINGS, 0);
+  page_table[PAGE_STRINGS] = (struct Page){
+      .begin = STRINGS_TABLE_W, .end = STRINGS_TABLE_W + STRINGS_SIZE};
 }
 
-static void Lookup(const char *lit) {
+static unsigned *Lookup(const char *lit) {
   unsigned offset = Djb2(lit);
   const unsigned end_offset = offset + HTABLE_SIZE;
-
-  LOG("looking for %s starting at %u\n", lit, offset % HTABLE_SIZE);
+  unsigned *entry;
+  LOG("looking for %s starting at %u\n", lit, offset);
   do {
-    entry = HTABLE_ENTRY(offset);
-    unsigned key = FromL64(entry);
-    if (!key) {
+    offset &= (HTABLE_SIZE - 1);
+    entry = HTABLE + (2 * offset);
+    if (!*entry) {
       /* empty slot */
-      sym = HTABLE_NONE;
-      return;
+      return entry;
     }
-    sym = HTABLE_GET_SYM(key);
-    if (StrEq(lit, TABLE + sym)) return; /* found! */
+    if (StrEq(lit, STRINGS_TABLE_W + *entry)) return entry; /* found! */
   } while (++offset != end_offset);
-  sym = HTABLE_OOM;
+  return 0;
 }
 
-static unsigned StrToTableAligned(const char *str, unsigned align) {
-  tp += align - 1;
-  tp &= ~(align - 1);
-  unsigned result = tp;
+Sym Insert(const char *lit, unsigned value, int allow_existing) {
+  unsigned *entry = Lookup(lit);
+  THROW_UNLESS(entry, ERR_OOM);
+  if (allow_existing && *entry) return *entry;
+
+  THROW_UNLESS(!*entry, ERR_EVAL);
+  entry[0] = tp;
+  entry[1] = value;
   do
-    if (tp == TABLE_SIZE) {
-      sym = HTABLE_OOM;
-      return result;
-    }
-  while ((TABLE[tp++] = *str++));
-  return result;
-}
-
-void Update(const char *lit, const char *hidden, int align_log2) {
-  Lookup(lit);
-  if (sym == HTABLE_OOM) return;
-
-  if (hidden)
-    ToL64(entry + L64_CSIZE,
-          StrToTableAligned(hidden, 1 << align_log2) >> align_log2);
-  if (sym != HTABLE_NONE) return;
-
-  const unsigned key = HTABLE_MAKE_KEY(StrToTableAligned(lit, 4));
-  sym = HTABLE_GET_SYM(key);
-  ToL64(entry, key);
+    THROW_UNLESS(tp < STRINGS_SIZE, ERR_OOM);
+  while ((STRINGS_TABLE_W[tp++] = *lit++));
+  tp += 3u;
+  tp &= ~3u;
   LOG("inserted symbol %u: %s\n", sym, LiteralName(sym));
+  return entry[0];
 }
 
 /* lexer */
@@ -158,7 +138,7 @@ static char TOKEN[TOKEN_SIZE];
 static void Lex(void) {
   unsigned c;
   do
-    THROW_UNLESS(pc < program_page.end, ERR_LEX);
+    THROW_UNLESS(pc < page_table[PAGE_PROGRAM].end, ERR_LEX);
   while ((c = *pc++) <= ' ');
 
   switch (c) {
@@ -197,7 +177,7 @@ static void Lex(void) {
       /* not an integer literal */
       token_val = TOKEN_VAL_NONE;
     }
-    THROW_UNLESS(pc < program_page.end, ERR_LEX);
+    THROW_UNLESS(pc < page_table[PAGE_PROGRAM].end, ERR_LEX);
   } while ((c = *pc++) > ')');
   --pc;
 
@@ -208,8 +188,7 @@ static void Lex(void) {
 
   THROW_UNLESS(token_len < TOKEN_SIZE, ERR_LEX);
   TOKEN[token_len] = 0;
-  Update(TOKEN, 0, 4);
-  THROW_UNLESS(sym != HTABLE_OOM, ERR_LEX);
+  sym = Insert(TOKEN, 0, 1);
 }
 
 /* parser */
@@ -295,7 +274,7 @@ static Sym Let(Sym e, Sym a) {
     val = Cadr(as);
 
     /* forbid shadowing core symbols */
-    THROW_UNLESS(Atom(var) && (var >= HTABLE_OFFSET), ERR_EVAL);
+    THROW_UNLESS(Atom(var) && (var >= sizeof(TABLE_INIT) - 1), ERR_EVAL);
     a = Cons(Pair(var, Eval(val, a)), a);
   }
   return Eval(body, a);
@@ -348,7 +327,13 @@ static Sym Eval(Sym e, Sym a) {
   return e;
 }
 
-static void lispm_main(void) {
+#define TAR_CONTENT_OFFSET 512u
+static void lispm_main(struct Page *program) {
+  page_table = page_alloc(PAGE_TABLE_SIZE);
+  THROW_UNLESS(page_table, ERR_OOM);
+  page_table[PAGE_PROGRAM] = *program;
+  pc = program->begin + TAR_CONTENT_OFFSET;
+
   InitStack();
   InitTable();
 
@@ -359,12 +344,7 @@ static void lispm_main(void) {
   sym = Eval(sym, SYM_NIL);
 }
 
-#define TAR_CONTENT_OFFSET 512u
-
 Sym lispm_start(struct Page *program) {
-  program_page = *program;
-
-  pc = program->begin + TAR_CONTENT_OFFSET;
-  TRY(lispm_main());
+  TRY(lispm_main(program));
   return sym;
 }

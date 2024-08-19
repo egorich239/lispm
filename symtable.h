@@ -19,8 +19,6 @@
   "!OOM\0\0\0\0"                                                               \
   "!INVALID_SYM\0\0\0\0"
 
-#define HTABLE_OFFSET 512
-
 #define SYM_NIL 0u
 #define SYM_QUOTE 4u
 #define SYM_COND 12u
