@@ -1,29 +1,17 @@
 #include "lispm.h"
+#include "rt.h"
 #include "symtable.h"
-
-/* runtime, for now standard C one */
-#include <setjmp.h>
-
-static jmp_buf catch;
-#define TRY(...)                                                               \
-  do {                                                                         \
-    if (!setjmp(catch)) {                                                      \
-      __VA_ARGS__;                                                             \
-    }                                                                          \
-  } while (0)
 
 /* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
 #define THROW_UNLESS(cond, err)                                                \
   do {                                                                         \
     if (!(cond)) {                                                             \
       sym = (err);                                                             \
-      __builtin_trap();                                                        \
-      /*longjmp(catch, 1);*/                                                   \
+      THROW(1);                                                                \
     }                                                                          \
   } while (0)
 
 /* state */
-
 static unsigned pc; /* program text counter */
 static unsigned sp; /* stack pointer, grows down */
 static unsigned tp; /* table pointer, grows up */
