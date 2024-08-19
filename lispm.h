@@ -1,9 +1,7 @@
 #pragma once
 
+#include "rt.h"
 #include "symtable.h"
-
-#define LISPM_ASSERT(cond)                                                     \
-  if (!(cond)) __builtin_trap()
 
 #define PAGE_ALIGN_LOG2 12
 #define PAGE_ALIGN (1 << PAGE_ALIGN_LOG2)
@@ -11,8 +9,8 @@
 /* Page must be aligned to PAGE_ALIGN.
  */
 struct Page {
-  char* begin;
-  char* end;
+  char *begin;
+  char *end;
 };
 
 #define TABLE_SIZE 0x100000u
@@ -46,7 +44,7 @@ static inline void ToL64(char *target, unsigned v) {
     v >>= 6;
     target[L64_CSIZE - 1 - i] = (d < 32) ? d + 64 : d;
   }
-  LISPM_ASSERT(!v);
+  ASSERT(!v);
 }
 
 /* we expect TABLE initialized with TABLE_PREFIX from symtable.h */
@@ -89,16 +87,16 @@ static inline Sym Special(Sym x) { return (x & 3u) == 3 ? SYM_T : SYM_NIL; }
 
 /* ints */
 static inline Sym MakeUnsigned(unsigned val) {
-  LISPM_ASSERT(!(val & ~(~0u >> 2)));
+  ASSERT(!(val & ~(~0u >> 2)));
   return (val << 2) | 2;
 }
 static inline unsigned GetUnsigned(Sym val) {
-  LISPM_ASSERT(Unsigned(val));
+  ASSERT(Unsigned(val));
   return val >> 2;
 }
 
 static inline const char *LiteralName(Sym x) {
-  LISPM_ASSERT(Literal(x));
+  ASSERT(Literal(x));
   return TABLE + x;
 }
 

@@ -35,7 +35,7 @@ static inline Sym Car(Sym a) {
   return STACK[(a >> 2) + 0];
 }
 static inline Sym Cdr(Sym a) {
-  LISPM_ASSERT(List(a));
+  THROW_UNLESS(List(a), ERR_EVAL);
   return STACK[(a >> 2) + 1];
 }
 static inline Sym Caar(Sym a) { return Car(Car(a)); }
@@ -140,11 +140,6 @@ void Update(const char *lit, const char *hidden, int align_log2) {
   sym = HTABLE_GET_SYM(key);
   ToL64(entry, key);
   LOG("inserted symbol %u: %s\n", sym, LiteralName(sym));
-}
-
-static inline unsigned HiddenStateOfSym() {
-  LISPM_ASSERT(Literal(sym));
-  return FromL64(entry + L64_CSIZE);
 }
 
 /* lexer */
