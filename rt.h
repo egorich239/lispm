@@ -20,8 +20,8 @@ extern jmp_buf main_try;
     }                                                                          \
   } while (0)
 
-// #define THROW(res) longjmp(main_try, 1)
-#define THROW(...) ASSERT(0)
+#define THROW(res) longjmp(main_try, 1)
+// #define THROW(...) ASSERT(0)
 
 /* allocates read-writeable page */
 void* page_alloc(unsigned size);

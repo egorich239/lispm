@@ -288,12 +288,16 @@ static Sym gc(Sym s, Sym mark, unsigned offset) {
              : s;
 }
 
-static Sym eval(Sym e);
+static Sym eval0(Sym e);
+static Sym eval(Sym e) {
+  e = eval0(e);
+  int valid_result = !is_special(e) || e == SYM_T || e == SYM_NIL;
+  THROW_UNLESS(valid_result, STATUS_EVAL, e);
+  return e;
+}
 static Sym assoc(Sym e) {
   if (is_unsigned(e)) return e;
-  Sym r = get_assoc(e);
-  THROW_UNLESS(!is_special(r), STATUS_EVAL, e);
-  return r;
+  return get_assoc(e);
 }
 static void restore_shadow(Sym shadow) {
   while (!is_nil(shadow)) {
@@ -302,10 +306,10 @@ static void restore_shadow(Sym shadow) {
   }
 }
 static Sym evcon(Sym c) {
-  return !is_nil(eval(caar(c))) ? eval(car(cdar(c))) : evcon(cdr(c));
+  return !is_nil(eval0(caar(c))) ? eval0(car(cdar(c))) : evcon(cdr(c));
 }
 static Sym evlis(Sym m) {
-  return !is_nil(m) ? cons(eval(car(m)), evlis(cdr(m))) : SYM_NIL;
+  return !is_nil(m) ? cons(eval0(car(m)), evlis(cdr(m))) : SYM_NIL;
 }
 static inline Sym pair(Sym a, Sym b) {
   return cons(a, b); /* NOTE: must be in sync with Assoc */
@@ -315,10 +319,10 @@ static Sym let(Sym e) {
   Sym shadow = SYM_NIL;
   while (!is_nil(ass)) {
     Sym lit = caar(ass), ex = cadr(car(ass));
-    shadow = cons(pair(lit, set_assoc(lit, eval(ex))), shadow);
+    shadow = cons(pair(lit, set_assoc(lit, eval0(ex))), shadow);
     ass = cdr(ass);
   }
-  Sym res = eval(body);
+  Sym res = eval0(body);
   return restore_shadow(shadow), res;
 }
 static Sym apply(Sym f, Sym a) {
@@ -333,11 +337,11 @@ static Sym apply(Sym f, Sym a) {
     lits = cdr(lits), a = cdr(a);
   }
   THROW_UNLESS(is_nil(a), STATUS_EVAL, a);
-  Sym res = eval(car(cddr(f)));
+  Sym res = eval0(car(cddr(f)));
   return restore_shadow(shadow), res;
 }
 
-static Sym eval(Sym e) {
+static Sym eval0(Sym e) {
   if (is_atom(e)) return assoc(e);
   unsigned high_mark = SP;
   if (is_literal(car(e))) {
@@ -395,6 +399,7 @@ static inline Sym EQ(Sym a) {
 
 #define TAR_CONTENT_OFFSET 512u
 static void lispm_main(struct Page *program) {
+  STATUS = STATUS_OK;
   PAGE_TABLE = page_alloc(PAGE_TABLE_SIZE);
   THROW_UNLESS(PAGE_TABLE, STATUS_OOM, 3);
   PAGE_TABLE[PAGE_PROGRAM] = *program;
@@ -402,16 +407,26 @@ static void lispm_main(struct Page *program) {
 
   init_stack();
   init_table();
-
-  Sym sym = parse_object(lex());
-  DUMP(sym);
-  sym = eval(sym);
-  DUMP(sym);
+  Sym res = eval(parse_object(lex()));
+  DUMP(res);
 }
 
 __attribute__((noreturn)) void lispm_start(struct Page *program) {
   TRY(lispm_main(program));
-  FIN(STATUS_OK);
+  if (STATUS == STATUS_EVAL) {
+    TP = 4;
+    while (STRINGS_TABLE[TP]) {
+      const char *e = STRINGS_TABLE + TP;
+      while (*e)
+        ++e;
+      fprintf(stderr, "%s:\n", STRINGS_TABLE + TP);
+      Sym a = get_assoc(ensure(STRINGS_TABLE + TP, e));
+      if (!is_special(a)) DUMP(a);
+      TP = (e - STRINGS_TABLE) + 4;
+      TP &= ~3u;
+    }
+  }
+  FIN(STATUS);
 }
 
 #if DEBUG_PRINT

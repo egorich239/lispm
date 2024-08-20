@@ -55,7 +55,7 @@
         )))
 
         (reverse (QUOTE (LAMBDA (seq)
-            (foldl (QUOTE CONS) nil seq)
+            (foldl CONS nil seq)
         )))
 
         (scan-while (QUOTE (LAMBDA (cond body seq)
@@ -63,6 +63,7 @@
                 (
                     (impl (QUOTE (LAMBDA (cond body seq acc)
                         (COND
+                            ((EQ nil seq) (pair acc seq))
                             ((not (cond seq)) (pair acc seq))
                             (true (LET
                                 (
@@ -75,7 +76,7 @@
                         ))))
                     (res (impl cond body seq nil))
                 )
-                (pair (fst res) (snd res))
+                (pair (reverse (fst res)) (snd res))
             )
         )))
         
@@ -98,20 +99,19 @@
                         (x (CAR seq))
                         (xs (scan-while cond body (CDR seq)))
                         (expr (QUOTE (LAMBDA (l r)
-                            (CONS (fst r) (CONS l (CONS r nil)))
+                            (CONS (fst l) (CONS r (CONS (snd l) nil)))
                         )))
                     )
-                    xs
-
+                    (pair (foldl expr x (fst xs)) (snd xs))
                 ))
             )
         )))
 
 
     )
-    (parse-mul (QUOTE (A C (QUOTE *) C)))
-
+    (parse-mul (QUOTE (A * C div D)))
 )
+    (reverse (QUOTE (A B C)))
                     (foldl expr x xs)
 
         (qq (QUOTE (LAMBDA (x) 
