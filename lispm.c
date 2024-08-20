@@ -1,6 +1,7 @@
 #include "lispm.h"
 #include "rt.h"
-#include "symtable.h"
+
+static int STATUS;
 
 /* symbol: last two bits encode its kind
  * - <OFFS> 00: symbol from the table, at '<OFFS> 00' position;
@@ -12,11 +13,12 @@
  * - 11..11 11: no value marker in hash table.
  */
 typedef unsigned Sym;
+#define SYM_SHADOW_FORBIDDEN ((~0u) - 4u)
+#define SYM_NO_ASSOC (~0u)
 
 /* state */
 static struct Page *PAGE_TABLE;
-#define PAGE_PROGRAM 0u
-#define PAGE_STRINGS 1u
+#define PAGE_PROGRAM ((0u << 2) | 3u)
 
 /* program text counter */
 static const char *PC;
@@ -29,6 +31,11 @@ static unsigned TP;
 /* the execution stack */
 static Sym *STACK;
 static unsigned SP; /* grows down */
+static unsigned PP; /* parser pointer, grows up */
+
+/* common symbols */
+Sym SYM_NIL, SYM_QUOTE, SYM_COND, SYM_LET, SYM_LAMBDA, SYM_T, SYM_EQ, SYM_ATOM,
+    SYM_CAR, SYM_CDR, SYM_CONS, SYM_STR, SYM_PROGRAM;
 
 #define DEBUG_PRINT 1
 #if DEBUG_PRINT
@@ -45,344 +52,297 @@ static void lispm_dump(Sym sym);
 #define DUMP(sym) lispm_dump(sym)
 #endif
 
-/* is atom? */
-static inline Sym Atom(Sym x) { return !(x & 1u) ? SYM_T : SYM_NIL; }
-/* is literal atom? */
-static inline Sym Literal(Sym x) { return (x & 3u) == 0 ? SYM_T : SYM_NIL; }
-/* is list? */
-static inline Sym List(Sym x) { return (x & 3u) == 1 ? SYM_T : SYM_NIL; }
-/* is unsigned? */
-static inline Sym Unsigned(Sym x) { return (x & 3u) == 2 ? SYM_T : SYM_NIL; }
-/* is special? */
-static inline Sym Special(Sym x) { return (x & 3u) == 3 ? SYM_T : SYM_NIL; }
-
-/* ints */
-static inline Sym MakeUnsigned(unsigned val) {
-  ASSERT(!(val & ~(~0u >> 2)));
-  return (val << 2) | 2;
-}
-static inline unsigned GetUnsigned(Sym val) {
-  ASSERT(Unsigned(val));
-  return val >> 2;
-}
-
-static inline const char *LiteralName(Sym x) {
-  ASSERT(Literal(x));
-  return STRINGS_TABLE + x;
-}
-
-/* specials */
-#define MAKE_SPECIAL(val) (((val) << 2) | 3u)
-
-/* lisp style Eq */
-static inline Sym Eq(Sym x, Sym y) {
-  return Atom(x) && x == y ? SYM_T : SYM_NIL;
-}
-
-/* hash */
-static inline unsigned Djb2(const char *s) {
-  unsigned hash = 5381u;
-  int c;
-  while ((c = *s++))
-    hash = 33 * hash + ((unsigned)c);
-  return hash;
-}
-
-/* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
-#define THROW_UNLESS(cond, err)                                                \
+/* Unlike ASSERT, these errors are caused by a bug in the user code. */
+#define THROW_UNLESS(cond, err, ctx)                                           \
   do {                                                                         \
     if (!(cond)) {                                                             \
-      sym = (err);                                                             \
+      STATUS = (err);                                                          \
+      if (ctx != 3) DUMP(ctx);                                                 \
       THROW(1);                                                                \
     }                                                                          \
   } while (0)
 
-static Sym sym; /* adjusted by lexer, parser, and eval */
+static inline int IsAtom(Sym x) { return !(x & 1u); }
+static inline int IsNil(Sym x) { return x == SYM_NIL; }
+static inline int IsLiteral(Sym x) { return (x & 3u) == 0; }
+static inline int IsUnsigned(Sym x) { return (x & 3u) == 2; }
+static inline int IsCons(Sym x) { return (x & 3u) == 1; }
+static inline int IsPage(Sym x) { return (x & 3u) == 3; }
 
-/* list routines */
+static inline Sym MakeLiteral(unsigned *entry) {
+  return (entry - STRINGS_INDEX) << 2;
+}
+static inline const char *LiteralName(Sym s) {
+  ASSERT(IsLiteral(s));
+  return STRINGS_TABLE + STRINGS_INDEX[(s >> 2) + 0];
+}
+static inline unsigned *LiteralAssoc(Sym s) {
+  ASSERT(IsLiteral(s));
+  return STRINGS_INDEX + (s >> 2) + 1;
+}
+static inline Sym MakeUnsigned(unsigned val) {
+  ASSERT(!(val & ~(~0u >> 2)));
+  return (val << 2) | 2;
+}
+
+/* strings */
+static inline unsigned Djb2(const char *b, const char *e, unsigned hash) {
+  while (b != e)
+    hash = 33 * hash + ((unsigned)*b++);
+  return hash;
+}
+
+static inline int StrEq(const char *b, const char *e, const char *h) {
+  while (b != e)
+    if (*b++ != *h++) return 0;
+  return !*h;
+}
+
+/* init routines */
 static inline void InitStack(void) {
   STACK = page_alloc(STACK_SIZE * sizeof(Sym));
+  PP = 2; /* make it a tiny positive number*/
   SP = STACK_SIZE;
-  THROW_UNLESS(STACK, ERR_OOM);
-}
-
-/* list constructor */
-static inline Sym Cons(Sym car, Sym cdr) {
-  THROW_UNLESS(SP & ~3u, ERR_OOM);
-  STACK[--SP] = cdr;
-  STACK[--SP] = car;
-  return (SP << 2) | 1;
-}
-
-static inline Sym Car(Sym a) {
-  THROW_UNLESS(List(a), ERR_EVAL);
-  return STACK[(a >> 2) + 0];
-}
-static inline Sym Cdr(Sym a) {
-  THROW_UNLESS(List(a), ERR_EVAL);
-  return STACK[(a >> 2) + 1];
-}
-static inline Sym Caar(Sym a) { return Car(Car(a)); }
-static inline Sym Cadr(Sym a) { return Car(Cdr(a)); }
-static inline Sym Cdar(Sym a) { return Cdr(Car(a)); }
-static inline Sym Cddr(Sym a) { return Cdr(Cdr(a)); }
-
-/* string equality: needle is expected to be short(er) */
-static inline int StrEq(const char *n, const char *h) {
-  while (*n && *n == *h)
-    ++n, ++h;
-  return *n == *h;
+  THROW_UNLESS(STACK, STATUS_OOM, 3);
 }
 
 static void InitTable(void);
-static unsigned *Lookup(const char *lit);
-static Sym Insert(const char *lit, unsigned value, int allow_existing);
-
-static const char TABLE_INIT[] = TABLE_PREFIX;
-static void InitTable(void) {
-  STRINGS_TABLE = page_alloc(STRINGS_SIZE);
-  STRINGS_INDEX = page_alloc(HTABLE_SIZE * 2 * sizeof(unsigned));
-  THROW_UNLESS(STRINGS_TABLE && STRINGS_INDEX, ERR_OOM);
-
-  TP = 0;
-  for (unsigned t = 0; t < sizeof(TABLE_INIT); ++t) {
-    if (!TABLE_INIT[t]) continue;
-    Sym key = Insert(TABLE_INIT + t, 0, 0);
-    ASSERT(key == t);
-    while (TABLE_INIT[t++])
-      ;
-    --t;
-  }
-  ASSERT(TP + 1 == sizeof(TABLE_INIT));
-  Insert("PROGRAM", PAGE_PROGRAM, 0);
-  Insert("STRINGS", PAGE_STRINGS, 0);
-  PAGE_TABLE[PAGE_STRINGS] = (struct Page){.begin = STRINGS_TABLE,
-                                           .end = STRINGS_TABLE + STRINGS_SIZE};
+static unsigned *Lookup(const char *b, const char *e);
+static Sym Insert(const char *b, const char *e, unsigned value,
+                  int allow_existing);
+static inline Sym InsertCStr(const char *lit, unsigned value,
+                             int allow_existing) {
+  const char *e = lit;
+  while (*e)
+    ++e;
+  return Insert(lit, e, value, allow_existing);
 }
 
-static unsigned *Lookup(const char *lit) {
-  unsigned offset = Djb2(lit);
-  const unsigned end_offset = offset + HTABLE_SIZE;
-  unsigned *entry;
-  LOG("looking for %s starting at %u\n", lit, offset);
-  do {
-    offset &= (HTABLE_SIZE - 1);
-    entry = STRINGS_INDEX + (2 * offset);
-    if (!*entry) {
-      /* empty slot */
-      return entry;
-    }
-    if (StrEq(lit, STRINGS_TABLE + *entry)) return entry; /* found! */
-  } while (++offset != end_offset);
+static void InitTable(void) {
+  STRINGS_TABLE = page_alloc(STRINGS_SIZE);
+  STRINGS_INDEX = page_alloc(STRINGS_INDEX_SIZE * 2 * sizeof(unsigned));
+  THROW_UNLESS(STRINGS_TABLE && STRINGS_INDEX, STATUS_OOM, 3);
+
+  TP = 0;
+  SYM_NIL = InsertCStr("NIL", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_QUOTE = InsertCStr("QUOTE", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_COND = InsertCStr("COND", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_LET = InsertCStr("LET", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_LAMBDA = InsertCStr("LAMBDA", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_T = InsertCStr("T", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_EQ = InsertCStr("EQ", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_ATOM = InsertCStr("ATOM", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_CAR = InsertCStr("CAR", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_CDR = InsertCStr("CDR", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_CONS = InsertCStr("CONS", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_STR = InsertCStr("STR", SYM_SHADOW_FORBIDDEN, 0);
+  SYM_PROGRAM = InsertCStr("PROGRAM", PAGE_PROGRAM, 0);
+}
+
+static unsigned *Lookup(const char *b, const char *e) {
+  unsigned offset = Djb2(b, e, 5381u);
+  unsigned step = 2 * Djb2(b, e, ~offset) + 1;
+  for (int i = 0; i < STRINGS_INDEX_LOOKUP_LIMIT; ++i, offset += step) {
+    offset &= (STRINGS_INDEX_SIZE - 1);
+    unsigned *entry = STRINGS_INDEX + (2 * offset);
+    if (!*entry) return entry;
+    if (StrEq(b, e, LiteralName(MakeLiteral(entry)))) return entry; /* found! */
+  }
   return 0;
 }
 
-Sym Insert(const char *lit, unsigned value, int allow_existing) {
-  unsigned *entry = Lookup(lit);
-  THROW_UNLESS(entry, ERR_OOM);
-  if (allow_existing && *entry) return *entry;
+Sym Insert(const char *b, const char *e, unsigned value, int allow_existing) {
+  unsigned *entry = Lookup(b, e);
+  THROW_UNLESS(entry, STATUS_OOM, 3);
+  if (allow_existing && *entry) return MakeLiteral(entry);
 
-  THROW_UNLESS(!*entry, ERR_EVAL);
+  THROW_UNLESS(!*entry, STATUS_EVAL, MakeLiteral(entry));
+  THROW_UNLESS(TP + (e - b + 1) <= STRINGS_SIZE, STATUS_OOM, 3);
   entry[0] = TP;
   entry[1] = value;
-  do
-    THROW_UNLESS(TP < STRINGS_SIZE, ERR_OOM);
-  while ((STRINGS_TABLE[TP++] = *lit++));
+  while (b != e)
+    STRINGS_TABLE[TP++] = *b++;
+  STRINGS_TABLE[TP++] = 0;
   TP += 3u;
   TP &= ~3u;
-  LOG("inserted symbol %u: %s\n", sym, LiteralName(sym));
-  return entry[0];
+  return MakeLiteral(entry);
 }
 
 /* lexer */
-#define TOKEN_SIZE 128u
-static char TOKEN[TOKEN_SIZE];
+/* Special "symbol" values returned by lexer.
+   They correspond to page symbols and cannot be produced by a lexeme. */
+#define TOK_LPAREN ((0u << 2) | 3u)
+#define TOK_RPAREN ((1u << 2) | 3u)
 
-#define TOK_LPAREN MAKE_SPECIAL('(')
-#define TOK_RPAREN MAKE_SPECIAL(')')
-
-static void Lex(void) {
+static Sym Lex(void) {
   unsigned c;
   do
-    THROW_UNLESS(PC < PAGE_TABLE[PAGE_PROGRAM].end, ERR_LEX);
+    THROW_UNLESS(PC < PAGE_TABLE[PAGE_PROGRAM].end, STATUS_LEX, 3);
   while ((c = *PC++) <= ' ');
 
   switch (c) {
   case '(':
-    sym = TOK_LPAREN;
-    return;
+    return TOK_LPAREN;
   case ')':
-    sym = TOK_RPAREN;
-    return;
+    return TOK_RPAREN;
   }
 
-  unsigned token_len = 0, token_val = 0;
+  const char *const token_begin = PC - 1;
+  unsigned token_val = 0;
+#define TOKEN_VAL_MAX (~0u >> 2)
 #define TOKEN_VAL_NONE ((unsigned)-1)
 
   do {
     /* keep some symbols unavailable to regular tokens: !"#$%& */
-    THROW_UNLESS(')' < c && c < 127u && token_len < TOKEN_SIZE, ERR_LEX);
-    TOKEN[token_len++] = c;
-
+    THROW_UNLESS(')' < c && c < 127u, STATUS_LEX, 3);
     if (token_val != TOKEN_VAL_NONE && '0' <= c && c <= '9') {
-      /* The maximum value in our format is M = (MAXU / 4) */
-
-      /* 8*val > M  */
-      unsigned overflow = token_val > (TOKEN_VAL_NONE >> 5);
-
-      /* no UB: unsigned arithm */
-      token_val *= 10;
-      token_val += (c - '0');
-
-      /* if overflow was false, then
-         no unsigned overflow of token_val can happen,
-         as prior value is at least 32 times less */
-      overflow |= token_val > (TOKEN_VAL_NONE >> 2);
-      THROW_UNLESS(!overflow, ERR_LEX);
+      int overflow =
+          __builtin_umul_overflow(token_val, 10u, &token_val) ||
+          __builtin_uadd_overflow(token_val, (unsigned)(c - '0'), &token_val) ||
+          token_val > TOKEN_VAL_MAX;
+      THROW_UNLESS(!overflow, STATUS_LEX, 3);
     } else {
       /* not an integer literal */
       token_val = TOKEN_VAL_NONE;
     }
-    THROW_UNLESS(PC < PAGE_TABLE[PAGE_PROGRAM].end, ERR_LEX);
+    THROW_UNLESS(PC < PAGE_TABLE[PAGE_PROGRAM].end, STATUS_LEX, 3);
   } while ((c = *PC++) > ')');
   --PC;
 
   if (token_val != TOKEN_VAL_NONE) {
-    sym = MakeUnsigned(token_val);
-    return;
+    return MakeUnsigned(token_val);
   }
+  return Insert(token_begin, PC, SYM_NO_ASSOC, 1);
+}
 
-  THROW_UNLESS(token_len < TOKEN_SIZE, ERR_LEX);
-  TOKEN[token_len] = 0;
-  sym = Insert(TOKEN, 0, 1);
+/* list constructor */
+static inline Sym CONS(Sym car, Sym cdr) {
+  STACK[--SP] = cdr;
+  STACK[--SP] = car;
+  THROW_UNLESS(PP < SP, STATUS_OOM, 3);
+  return (SP << 2) | 1;
+}
+static inline unsigned CdrCell(Sym li) {
+  ASSERT(IsCons(li));
+  return (li >> 2) + 1;
 }
 
 /* parser */
-#define PARSE_STACK_SIZE 1024u
-static Sym PARSE_STACK[PARSE_STACK_SIZE];
-
-static void ParseObject(void) {
-  unsigned parse_stack_depth;
-  Sym car, li;
-
-  parse_stack_depth = 0;
-  do {
-    THROW_UNLESS(parse_stack_depth < PARSE_STACK_SIZE, ERR_PARSE);
-    Lex();
-
-    switch (sym) {
-    case TOK_LPAREN:
-      /* make oparen consume 2! slots */
-      PARSE_STACK[++parse_stack_depth] = TOK_LPAREN;
-      break;
-    case TOK_RPAREN:
-      li = SYM_NIL;
-      do {
-        THROW_UNLESS(parse_stack_depth, ERR_PARSE);
-        if ((car = PARSE_STACK[--parse_stack_depth]) == TOK_LPAREN) break;
-        li = Cons(car, li);
-      } while (1);
-
-      /* put result _under_ the position of oparen */
-      THROW_UNLESS(parse_stack_depth, ERR_PARSE);
-      PARSE_STACK[--parse_stack_depth] = li;
-      break;
-    default:
-      PARSE_STACK[parse_stack_depth] = sym;
-    }
-  } while ((++parse_stack_depth) & ~1u);
-  sym = PARSE_STACK[0];
+static Sym ParseObject(Sym tok) {
+  if (IsAtom(tok)) return tok;
+  THROW_UNLESS(tok == TOK_LPAREN, STATUS_PARSE, 3);
+  if ((tok = Lex()) == TOK_RPAREN) return SYM_NIL;
+  unsigned low_mark = PP;
+  while (tok != TOK_RPAREN) {
+    THROW_UNLESS(++PP < SP, STATUS_PARSE, tok);
+    STACK[PP - 1] = ParseObject(tok);
+    tok = Lex();
+  }
+  Sym res = CONS(STACK[--PP], SYM_NIL);
+  while (low_mark < PP)
+    res = CONS(STACK[--PP], res);
+  return res;
 }
 
 /* eval */
 static Sym Eval(Sym e, Sym a);
 
+static inline Sym CAR(Sym a) {
+  THROW_UNLESS(IsCons(a), STATUS_EVAL, a);
+  return STACK[(a >> 2) + 0];
+}
+static inline Sym CDR(Sym a) {
+  THROW_UNLESS(IsCons(a), STATUS_EVAL, a);
+  return STACK[(a >> 2) + 1];
+}
+
+static inline Sym EQ(Sym x, Sym y) {
+  return IsAtom(x) && x == y ? SYM_T : SYM_NIL;
+}
+static inline Sym CAAR(Sym a) { return CAR(CAR(a)); }
+static inline Sym CADR(Sym a) { return CAR(CDR(a)); }
+static inline Sym CDAR(Sym a) { return CDR(CAR(a)); }
+static inline Sym CDDR(Sym a) { return CDR(CDR(a)); }
+
 /* creates a dense copy of object `s`.
  * offset should already be shifted by 2 bits
  */
 static Sym Gc(Sym s, Sym mark, unsigned offset) {
-  return (List(s) && s < mark)
-             ? Cons(Gc(Car(s), mark, offset), Gc(Cdr(s), mark, offset)) + offset
+  return (IsCons(s) && s < mark)
+             ? CONS(Gc(CAR(s), mark, offset), Gc(CDR(s), mark, offset)) + offset
              : s;
 }
 
 static Sym Concat(Sym x, Sym y) {
-  return x ? Cons(Car(x), Concat(Cdr(x), y)) : y;
+  return !IsNil(x) ? CONS(CAR(x), Concat(CDR(x), y)) : y;
 }
 static Sym Evcon(Sym c, Sym a) {
-  return Eval(Caar(c), a) ? Eval(Car(Cdar(c)), a) : Evcon(Cdr(c), a);
+  return Eval(CAAR(c), a) ? Eval(CAR(CDAR(c)), a) : Evcon(CDR(c), a);
 }
 static Sym Evlis(Sym m, Sym a) {
-  return m ? Cons(Eval(Car(m), a), Evlis(Cdr(m), a)) : SYM_NIL;
+  return !IsNil(m) ? CONS(Eval(CAR(m), a), Evlis(CDR(m), a)) : SYM_NIL;
 }
 
 static inline Sym Pair(Sym a, Sym b) {
-  return Cons(a, b); /* NOTE: must be in sync with Assoc */
+  return CONS(a, b); /* NOTE: must be in sync with Assoc */
 }
 static inline Sym Zip(Sym x, Sym y) {
-  return x ? Cons(Pair(Car(x), Car(y)), Zip(Cdr(x), Cdr(y))) : SYM_NIL;
+  return !IsNil(x) ? CONS(Pair(CAR(x), CAR(y)), Zip(CDR(x), CDR(y))) : SYM_NIL;
 }
 static Sym Assoc(Sym e, Sym a) {
-  while (Caar(a) != e)
-    a = Cdr(a);
-  return Cdar(a);
+  if (IsUnsigned(e)) return e;
+  while (CAAR(a) != e)
+    a = CDR(a);
+  return CDAR(a);
 }
 
 static Sym Let(Sym e, Sym a) {
-  Sym vars = Car(e);
-  Sym body = Cadr(e);
+  Sym vars = CAR(e);
+  Sym body = CADR(e);
   Sym as, var, val;
-  while (vars) {
-    as = Car(vars);
-    vars = Cdr(vars);
+  while (!IsNil(vars)) {
+    as = CAR(vars);
+    vars = CDR(vars);
 
-    var = Car(as);
-    val = Cadr(as);
+    var = CAR(as);
+    val = CADR(as);
 
     /* forbid shadowing core symbols */
-    THROW_UNLESS(Atom(var) && (var >= sizeof(TABLE_INIT) - 1), ERR_EVAL);
-    a = Cons(Pair(var, Eval(val, a)), a);
+    THROW_UNLESS(IsLiteral(var) && *LiteralAssoc(var) != SYM_SHADOW_FORBIDDEN,
+                 STATUS_EVAL, var);
+    a = CONS(Pair(var, Eval(val, a)), a);
   }
   return Eval(body, a);
 }
 
 static Sym Eval(Sym e, Sym a) {
-  if (Atom(e)) return Assoc(e, a);
+  if (IsAtom(e)) return Assoc(e, a);
 
-  Sym car = Car(e), cdr = Cdr(e);
+  Sym car = CAR(e), cdr = CDR(e);
 
   unsigned high_mark = SP;
-  switch (car) {
-  case SYM_QUOTE:
-    return Car(cdr);
-  case SYM_ATOM:
-    e = Atom(Eval(Car(cdr), a));
-    break;
-  case SYM_CAR:
-    e = Car(Eval(Car(cdr), a));
-    break;
-  case SYM_CDR:
-    e = Cdr(Eval(Car(cdr), a));
-    break;
-  case SYM_EQ:
-    e = Eq(Eval(Car(cdr), a), Eval(Cadr(cdr), a));
-    break;
-  case SYM_CONS:
-    e = Cons(Eval(Car(cdr), a), Eval(Cadr(cdr), a));
-    break;
-  case SYM_COND:
+  /* TODO: make switch */
+  if (car == SYM_QUOTE) return CAR(cdr);
+
+  if (car == SYM_ATOM)
+    e = IsAtom(Eval(CAR(cdr), a)) ? SYM_T : SYM_NIL;
+  else if (car == SYM_CAR)
+    e = CAR(Eval(CAR(cdr), a));
+  else if (car == SYM_CDR)
+    e = CDR(Eval(CAR(cdr), a));
+  else if (car == SYM_EQ)
+    e = EQ(Eval(CAR(cdr), a), Eval(CADR(cdr), a));
+  else if (car == SYM_CONS)
+    e = CONS(Eval(CAR(cdr), a), Eval(CADR(cdr), a));
+  else if (car == SYM_COND)
     e = Evcon(cdr, a);
-    break;
-  case SYM_LET:
+  else if (car == SYM_LET)
     e = Let(cdr, a);
-    break;
-  default:
-    if (Atom(car))
-      e = Eval(Cons(Assoc(car, a), cdr), a);
-    else if (Car(car) == SYM_LAMBDA)
-      e = Eval(Cadr(Cdr(car)), Concat(Zip(Cadr(car), Evlis(cdr, a)), a));
-    else
-      THROW_UNLESS(0, ERR_EVAL);
+  else if (IsAtom(car))
+    e = Eval(CONS(Assoc(car, a), cdr), a);
+  else {
+    THROW_UNLESS(CAR(car) == SYM_LAMBDA, STATUS_EVAL, car);
+    e = Eval(CADR(CDR(car)), Concat(Zip(CADR(car), Evlis(cdr, a)), a));
   }
 
   unsigned low_mark = SP;
@@ -396,24 +356,22 @@ static Sym Eval(Sym e, Sym a) {
 #define TAR_CONTENT_OFFSET 512u
 static void lispm_main(struct Page *program) {
   PAGE_TABLE = page_alloc(PAGE_TABLE_SIZE);
-  THROW_UNLESS(PAGE_TABLE, ERR_OOM);
+  THROW_UNLESS(PAGE_TABLE, STATUS_OOM, 3);
   PAGE_TABLE[PAGE_PROGRAM] = *program;
   PC = program->begin + TAR_CONTENT_OFFSET;
 
   InitStack();
   InitTable();
 
-  ParseObject();
-
-  LOG("parse result:%s\n", "");
+  Sym sym = ParseObject(Lex());
   DUMP(sym);
   sym = Eval(sym, SYM_NIL);
+  DUMP(sym);
 }
 
 __attribute__((noreturn)) void lispm_start(struct Page *program) {
   TRY(lispm_main(program));
-  DUMP(sym);
-  SUCCEED();
+  FIN(STATUS_OK);
 }
 
 #if DEBUG_PRINT
@@ -426,27 +384,27 @@ static inline void lispm_dump(Sym sym) {
       fprintf(stderr, " ");
   same_line = 0;
 
-  if (Unsigned(sym)) {
-    fprintf(stderr, "%u\n", sym);
-  } else if (Literal(sym)) {
+  if (IsUnsigned(sym)) {
+    fprintf(stderr, "%u\n", sym >> 2);
+  } else if (IsLiteral(sym)) {
     fprintf(stderr, "%s\n", LiteralName(sym));
-  } else if (Special(sym)) {
-    fprintf(stderr, "<special %x>\n", sym);
+  } else if (IsPage(sym)) {
+    fprintf(stderr, "<page %u>\n", (sym >> 2));
   } else {
     fprintf(stderr, "(");
     indent += 2;
     same_line = 1;
-    while (List(sym)) {
-      lispm_dump(STACK[sym >> 2]);
-      sym = STACK[(sym >> 2) + 1];
+    while (IsCons(sym)) {
+      lispm_dump(CAR(sym));
+      sym = CDR(sym);
     }
-    if (sym) {
+    if (!IsNil(sym)) {
       lispm_dump(sym);
     }
     indent -= 2;
     for (int i = 0; i < indent; ++i)
       fprintf(stderr, " ");
-    fprintf(stderr, sym ? "!)\n" : ")\n");
+    fprintf(stderr, !IsNil(sym) ? "!)\n" : ")\n");
   }
 }
 #endif
