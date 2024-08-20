@@ -107,9 +107,34 @@
             )
         )))
 
+        (parse-sum (QUOTE (LAMBDA (seq)
+            (COND
+                ((ATOM (CAR seq)) (LET
+                    (
+                        (cond (QUOTE (LAMBDA (seq.)
+                            (or
+                                (EQ (QUOTE +) (CAR seq.))
+                                (EQ (QUOTE -) (CAR seq.))
+                            ))))
+                        (body (QUOTE (LAMBDA (seq.)
+                            (LET
+                                ((mul. (parse-mul (CDR seq.))))
+                                (CONS (pair (CAR seq.) (fst mul.)) (snd mul.))
+                            )
+                        )))
+                        (x (parse-mul seq))
+                        (xs (scan-while cond body (snd x)))
+                        (expr (QUOTE (LAMBDA (l r)
+                            (CONS (fst l) (CONS r (CONS (snd l) nil)))
+                        )))
+                    )
+                    (pair (foldl expr (fst x) (fst xs)) (snd xs))
+                ))
+            )
+        )))
 
     )
-    (parse-mul (QUOTE (A * C div D)))
+    (parse-sum (QUOTE (A * C div D + E)))
 )
     (reverse (QUOTE (A B C)))
                     (foldl expr x xs)
