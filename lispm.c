@@ -441,12 +441,14 @@ static inline void lispm_dump(Sym sym) {
 
   if (is_nil(sym)) {
     fprintf(stderr, "()\n");
+  } else if (sym == SYM_T) {
+    fprintf(stderr, "T\n");
   } else if (is_unsigned(sym)) {
     fprintf(stderr, "%u\n", sym >> 2);
   } else if (is_literal(sym)) {
     fprintf(stderr, "%s\n", literal_name(sym));
-  } else if (is_page(sym)) {
-    fprintf(stderr, "<page %u>\n", (sym >> 2));
+  } else if (is_special(sym)) {
+    fprintf(stderr, "<special %u>\n", (sym >> 2));
   } else {
     fprintf(stderr, "(");
     indent += 2;
