@@ -72,13 +72,14 @@
         (State (LAMBDA (fn) fn))
         (runState (LAMBDA (s) s))
         (returnS (LAMBDA (x) (State (LAMBDA (s) (pair x s)))))
-        (>>= (LAMBDA (p k) (LAMBDA (s0) (LET
+        (>>=S (LAMBDA (p k) (LAMBDA (s0) (LET
             (
                 (xs1 ((runState p) s0))
                 (x (fst xs1))
                 (s1 (snd xs1))
             )
             ((runState (k x)) s1)))))
+        (>>S (LAMBDA (p k) (>>=S p (LAMBDA (_) k))))
         (evalState (LAMBDA (p s) (fst ((runState p) s))))
         (execState (LAMBDA (p s) (snd ((runState p) s))))
         
@@ -87,7 +88,7 @@
 
             ((and (not (ATOM e)) (EQ (QUOTE <-) (CAR e)))
                 (LIST (QUOTE (
-                    (QUOTE >>=)
+                    (QUOTE >>=S)
                     (CAR (cddr e))
                 (LIST (QUOTE (
                     (QUOTE LAMBDA)
@@ -96,15 +97,39 @@
 
             (true
                 (LIST (QUOTE (
-                    (QUOTE >>=)
+                    (QUOTE >>=S)
                     (CAR e)
                 (LIST (QUOTE (
                     (QUOTE LAMBDA)
                     (LIST (QUOTE ((QUOTE _))))
                     t)))))))
         )) nil seq)))
-
         (doS (compose EVAL doS.))
+
+        (whileS (LAMBDA (p f) (LET ((whileS. (LAMBDA (rec)
+            (doS (QUOTE (
+                (<- c p)
+                (COND
+                    (c (doS (QUOTE (
+                        (<- x f)
+                        (<- xs (rec rec))
+                        (returnS (CONS x xs))
+                    ))))
+                    (true nil)
+                ))))))) (whileS. whileS.))))
+        
+        (whileS_ (LAMBDA (p f) (LET ((whileS. (LAMBDA (rec)
+            (doS (QUOTE (
+                (<- c p)
+                (COND
+                    (c (doS (QUOTE (
+                        (f)
+                        ((rec rec))
+                        (returnS nil)
+                    ))))
+                    (true nil)
+                ))))))) (whileS. whileS.))))
+        
 
         (pfx (LAMBDA (x) (LAMBDA (y) (pair y (CONS x y)))))
 
@@ -114,11 +139,16 @@
             ((pfx 239))
             (returnS l)
         ))))
+
     )
 
-    ((runState pcd) (QUOTE (1 2 3)))
-     
+    ((runState pcd) (QUOTE (1 2 3 4 5)))
+    
 )
+        (pce (whileS
+            (doS (QUOTE (return (not (EQ 3 (CAR s)) s)))
+            (LAMBDA (s) (pair () (CDR s)) )
+            ))
     ((returnS 12) (QUOTE (1 2 3)))
             ((pfx 2))
     ( ())
