@@ -3,60 +3,56 @@
         (nil (QUOTE ()))
         (true (QUOTE T))
         
-        (not (LAMBDA (x)
-            (COND
-                ((EQ nil x) true)
-                (true nil)
-            )
-        ))
-        (and (LAMBDA (x y)
-            (COND
-                ((EQ nil x) nil)
-                ((EQ nil y) nil)
-                (true true)
-            )
-        ))
-        (or (LAMBDA (x y)
-            (COND
-                ((EQ nil x) (and y true))
-                (true true)
-            )
-        ))
+        (not (LAMBDA (x) (COND
+            ((EQ nil x) true)
+            (true nil))))
+        (and (LAMBDA (x y) (COND
+            ((EQ nil x) nil)
+            ((EQ nil y) nil)
+            (true true))))
+        (or (LAMBDA (x y) (COND
+            ((EQ nil x) (and y true))
+            (true true))))
 
         (cadr (LAMBDA (seq) (CAR (CDR seq))))
         (cddr (LAMBDA (seq) (CDR (CDR seq))))
 
+        (compose (LAMBDA (f g) (LAMBDA (x) (f (g x)))))
+
         (pair CONS)
+        (pair~ (LAMBDA (x y) (pair y x)))
         (fst CAR)
         (snd CDR)
+        (swap (LAMBDA (x) (pair (snd x) (fst x))))
 
-        (map (QUOTE (LAMBDA (fn seq)
-            (COND
+        (map (LAMBDA (fn seq) (LET
+            ((map. (LAMBDA (rec seq) (COND
                 ((EQ nil seq) nil)
                 (true (CONS
                     (fn (CAR seq))
-                    (map fn (CDR seq))
-                ))
-            )
-        )))
+                    (rec rec (CDR seq))))))))
+            (map. map. seq))))
+        (foldl (LAMBDA (fn z seq) (LET
+            ((foldl. (LAMBDA (rec z seq) (COND
+                ((EQ nil seq) z)
+                (true (rec rec (fn z (CAR seq)) (CDR seq)))))))
+            (foldl. foldl. z seq))))
+        (foldr (LAMBDA (fn z seq) (LET
+            ((foldr. (LAMBDA (rec seq) (COND
+                ((EQ nil seq) z)
+                (true (fn (CAR seq) (rec rec (CDR seq))))))))
+            (foldr. foldr. seq))))
+        (reverse (LAMBDA (seq) (foldl pair~ nil seq)))
 
-        (foldl (QUOTE (LAMBDA (fn acc seq)
-            (COND
-                ((EQ nil seq) acc)
-                (true (foldl fn (fn (CAR seq) acc) (CDR seq)))
-            )
-        )))
 
-        (foldr (QUOTE (LAMBDA (fn acc seq)
-            (COND
-                ((EQ nil seq) acc)
-                (true (fn (CAR seq) (foldr fn acc (CDR seq))))
-            )
-        )))
+    )
 
-        (reverse (QUOTE (LAMBDA (seq)
-            (foldl CONS nil seq)
-        )))
+    true
+)
+
+    (foldl (LAMBDA (z x) (CONS (QUOTE +) (CONS z (CONS x nil)))) 0 (QUOTE (1 2 3)))
+    (reverse (QUOTE (12 13 14)))
+
 
         (scan-while (QUOTE (LAMBDA (cond body seq)
             (LET 
@@ -133,6 +129,3 @@
             )
         )))
 
-    )
-    (pair 12 13)
-)

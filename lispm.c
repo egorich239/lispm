@@ -120,11 +120,16 @@ static inline int str_eq(const char *b, const char *e, const char *h) {
     if (*b++ != *h++) return 0;
   return !*h;
 }
+static inline Sym has_readonly_assoc(Sym s) {
+  ASSERT(is_literal(s));
+  const Sym a = STRINGS_INDEX[literal_ht_offs(s) + 1];
+  return is_special(a) && special_is_readonly(a);
+}
 static inline Sym get_assoc(Sym s) {
   ASSERT(is_literal(s));
   const Sym a = STRINGS_INDEX[literal_ht_offs(s) + 1];
   THROW_UNLESS(a != SYM_NO_ASSOC, STATUS_EVAL, s);
-  return a;
+  return !is_special(a) ? a : (a & ~SPECIAL_READONLY_BIT);
 }
 static inline Sym set_assoc(Sym s, Sym assoc) {
   Sym *a = STRINGS_INDEX + (literal_ht_offs(s) + 1);
@@ -144,13 +149,13 @@ static void init_table(void) {
   THROW_UNLESS(STRINGS_TABLE && STRINGS_INDEX, STATUS_OOM, 3);
 
   TP = 4; /* no symbol starts at offset 0 of the table string */
-  insert_cstr("T", SYM_T);
-  insert_cstr("QUOTE", SYM_QUOTE);
-  insert_cstr("COND", SYM_COND);
-  insert_cstr("LAMBDA", SYM_LAMBDA);
-  insert_cstr("LET", SYM_LET);
+  insert_cstr("T", SYM_T | SPECIAL_READONLY_BIT);
+  insert_cstr("QUOTE", SYM_QUOTE | SPECIAL_READONLY_BIT);
+  insert_cstr("COND", SYM_COND | SPECIAL_READONLY_BIT);
+  insert_cstr("LAMBDA", SYM_LAMBDA | SPECIAL_READONLY_BIT);
+  insert_cstr("LET", SYM_LET | SPECIAL_READONLY_BIT);
   for (unsigned i = 0; i < sizeof(BUILTINS) / sizeof(*BUILTINS); ++i) {
-    insert_cstr(BUILTINS[i].name, MAKE_BUILTIN_FN(i));
+    insert_cstr(BUILTINS[i].name, MAKE_BUILTIN_FN(i) | SPECIAL_READONLY_BIT);
   }
 }
 static Sym ensure(const char *b, const char *e) {
@@ -356,7 +361,7 @@ static Sym evcap_let(Sym t, Sym c0) {
   while (!is_nil(a)) {
     cons_unpack_user(a, &b, &a);
     cons_unpack_user(b, &n, &e1);
-    c = evcap0(e, c);
+    c = evcap0(cons_unwrap_last(e1), c);
     c = cons(cons(n, set_assoc(n, SYM_BINDING)), c);
   }
   c = evcap0(e, c);
@@ -366,8 +371,8 @@ static Sym evcap_let(Sym t, Sym c0) {
 static Sym evcap0(Sym p, Sym c) {
   if (is_unsigned(p)) return c;
   if (is_literal(p)) {
+    if (has_readonly_assoc(p)) return c;
     const Sym a = get_assoc(p);
-    if (is_special(a) && special_is_readonly(a)) return c;
     if (a == SYM_CAPTURED || a == SYM_BINDING) return c;
     return cons(cons(p, set_assoc(p, SYM_CAPTURED)), c);
   }
