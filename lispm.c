@@ -456,7 +456,7 @@ static inline Sym EQ(Sym a) {
   return is_atom(x) && x == y ? SYM_T : SYM_NIL;
 }
 static inline Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
-  return eval(cons_unwrap_last(e));
+  return eval0(cons_unwrap_last(e));
 }
 
 #define TAR_CONTENT_OFFSET 512u

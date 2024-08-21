@@ -79,6 +79,8 @@
                 (s1 (snd xs1))
             )
             ((runState (k x)) s1)))))
+        (evalState (LAMBDA (p s) (fst ((runState p) s))))
+        (execState (LAMBDA (p s) (snd ((runState p) s))))
         
         (doS. (LAMBDA (seq) (foldr (LAMBDA (e t) (COND
             ((EQ nil t) e)
@@ -104,8 +106,22 @@
 
         (doS (compose EVAL doS.))
 
+        (pfx (LAMBDA (x) (LAMBDA (y) (pair y (CONS x y)))))
 
+        (pcd (doS (QUOTE (
+            ((pfx 3))
+            (<- l (pfx 1))
+            ((pfx 239))
+            (returnS l)
+        ))))
     )
+
+    ((runState pcd) (QUOTE (1 2 3)))
+     
+)
+    ((returnS 12) (QUOTE (1 2 3)))
+            ((pfx 2))
+    ( ())
 
     (doS. (QUOTE (
         (<- a1 coinS)
@@ -113,9 +129,6 @@
         (<- a2 coinS)
         (returnS (pair a1 a2))
     )))
-
-)
-
         
 
 
@@ -136,8 +149,6 @@
             (whileS. whileS.)
         ))))
 
-        (evalState (LAMBDA (p s) (fst ((runState p) s))))
-        (execState (LAMBDA (p s) (snd ((runState p) s))))
 
     ((returnS 3) 4)
 
