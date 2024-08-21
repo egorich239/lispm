@@ -6,14 +6,11 @@
 #if DEBUG_PRINT
 #include <stdio.h>
 static void lispm_dump(Sym sym);
-#define LOG(fmt, ...) ((void)(fmt))
-// #define DUMP(sym) ((void)(sym))
-#define DUMP(sym) lispm_dump(sym)
-#else
-#include "symprint.h"
-#include <stdio.h>
 #define LOG(fmt, ...) fprintf(stderr, "[%d] " fmt, __LINE__, __VA_ARGS__)
 #define DUMP(sym)     lispm_dump(sym)
+#else
+#define LOG(fmt, ...) ((void)(fmt))
+#define DUMP(sym)     ((void)(sym))
 #endif
 
 static int STATUS;
@@ -22,7 +19,6 @@ static int STATUS;
   do {                                                                         \
     if (!(cond)) {                                                             \
       STATUS = (err);                                                          \
-      if (ctx != 3) DUMP(ctx);                                                 \
       THROW(1);                                                                \
     }                                                                          \
   } while (0)
@@ -470,6 +466,7 @@ static void lispm_main(struct Page *program) {
 
 __attribute__((noreturn)) void lispm_start(struct Page *program) {
   TRY(lispm_main(program));
+#if DEBUG_PRINT
   if (STATUS == STATUS_EVAL) {
     unsigned tp = 4;
     while (STRINGS_TABLE[tp]) {
@@ -484,6 +481,7 @@ __attribute__((noreturn)) void lispm_start(struct Page *program) {
       tp &= ~3u;
     }
   }
+#endif
   FIN(STATUS);
 }
 

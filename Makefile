@@ -1,4 +1,4 @@
-CFLAGS = -Wall -Werror -O0 -g -mtune=generic
+CFLAGS = -Wall -Werror -Oz -fomit-frame-pointer -g -mtune=generic
 
 SRCS = $(wildcard *.c)
 OBJS = $(SRCS:%.c=%.o)

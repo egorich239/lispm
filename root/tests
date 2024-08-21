@@ -1,0 +1,10 @@
+(LET
+    (
+        (y (QUOTE C))
+        (s (LAMBDA (x) (LAMBDA (y) (CONS x y))))
+        (sa (s (QUOTE A)))
+        (sb (s (QUOTE B)))
+        (sd (s (QUOTE D)))
+    )
+    (sa 13)
+)
