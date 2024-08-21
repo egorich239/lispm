@@ -29,12 +29,14 @@ static Sym CAR(Sym a);
 static Sym CDR(Sym a);
 static Sym ATOM(Sym a);
 static Sym EQ(Sym a);
+static Sym EVAL(Sym a);
 struct builtin_fn {
   Sym (*fn)(Sym args);
   const char *name;
 };
-static const struct builtin_fn BUILTINS[] = {
-    {CONS, "CONS"}, {CAR, "CAR"}, {CDR, "CDR"}, {ATOM, "ATOM"}, {EQ, "EQ"}};
+static const struct builtin_fn BUILTINS[] = {{CONS, "CONS"}, {CAR, "CAR"},
+                                             {CDR, "CDR"},   {ATOM, "ATOM"},
+                                             {EQ, "EQ"},     {EVAL, "EVAL"}};
 
 /* state */
 static struct Page *PAGE_TABLE;
@@ -303,10 +305,9 @@ static Sym evlis(Sym e) {
   return cons(eval0(a), evlis(d));
 }
 static Sym evapply(Sym f, Sym a) {
+  f = eval0(f);
   a = evlis(a);
-  if (is_literal(f)) f = get_assoc(f);
   if (is_builtin_fn(f)) return BUILTINS[builtin_fn_ft_offs(f)].fn(a);
-  if (is_cons(f)) f = eval0(f);
   THROW_UNLESS(is_lambda(f), STATUS_EVAL, f);
   Sym c, p, b, as, n, v;
   lambda_unpack(f, &c, &p, &b);
@@ -453,6 +454,9 @@ static inline Sym EQ(Sym a) {
   cons_unpack_user(a, &x, &y);
   y = cons_unwrap_last(y);
   return is_atom(x) && x == y ? SYM_T : SYM_NIL;
+}
+static inline Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
+  return eval(cons_unwrap_last(e));
 }
 
 #define TAR_CONTENT_OFFSET 512u

@@ -32,6 +32,8 @@
                     (fn (CAR seq))
                     (rec rec (CDR seq))))))))
             (map. map. seq))))
+        (LIST (LAMBDA (seq) (map EVAL seq)))
+
         (foldl (LAMBDA (fn z seq) (LET
             ((foldl. (LAMBDA (rec z seq) (COND
                 ((EQ nil seq) z)
@@ -44,15 +46,100 @@
             (foldr. foldr. seq))))
         (reverse (LAMBDA (seq) (foldl pair~ nil seq)))
 
+        (infixl (LAMBDA (seq) (LET (
+            (infix. (LAMBDA (rec z seq) (COND
+                ((EQ nil seq) z)
+                (true (rec rec
+                    (CONS (CAR seq)
+                    (CONS z
+                    (CONS (cadr seq) ())))
+                    (cddr seq)
+                ))))))
+            (infix. infix. (CAR seq) (CDR seq)))))
+        (infixr (LAMBDA (seq) (LET (
+            (infix. (LAMBDA (rec seq) (COND
+                ((EQ nil (CDR seq)) (CAR seq))
+                (true 
+                    (CONS (cadr seq)
+                    (CONS (CAR seq)
+                    (CONS (rec rec (cddr seq)) ())))
+                ))))) 
+            (infix. infix. seq))))
+        
+        (infixlE (compose EVAL infixl))
+        (infixrE (compose EVAL infixr))
+
+        (State (LAMBDA (fn) fn))
+        (runState (LAMBDA (s) s))
+        (returnS (LAMBDA (x) (State (LAMBDA (s) (pair x s)))))
+        (>>= (LAMBDA (p k) (LAMBDA (s0) (LET
+            (
+                (xs1 ((runState p) s0))
+                (x (fst xs1))
+                (s1 (snd xs1))
+            )
+            ((runState (k x)) s1)))))
+        
+        (doS. (LAMBDA (seq) (foldr (LAMBDA (e t) (COND
+            ((EQ nil t) e)
+
+            ((and (not (ATOM e)) (EQ (QUOTE <-) (CAR e)))
+                (LIST (QUOTE (
+                    (QUOTE >>=)
+                    (CAR (cddr e))
+                (LIST (QUOTE (
+                    (QUOTE LAMBDA)
+                    (LIST (QUOTE ((cadr e))))
+                    t)))))))
+
+            (true
+                (LIST (QUOTE (
+                    (QUOTE >>=)
+                    (CAR e)
+                (LIST (QUOTE (
+                    (QUOTE LAMBDA)
+                    (LIST (QUOTE ((QUOTE _))))
+                    t)))))))
+        )) nil seq)))
+
+        (doS (compose EVAL doS.))
+
 
     )
 
-    true
+    (doS. (QUOTE (
+        (<- a1 coinS)
+        (coinS)
+        (<- a2 coinS)
+        (returnS (pair a1 a2))
+    )))
+
 )
 
-    (foldl (LAMBDA (z x) (CONS (QUOTE +) (CONS z (CONS x nil)))) 0 (QUOTE (1 2 3)))
-    (reverse (QUOTE (12 13 14)))
+        
 
+
+    (LIST (QUOTE (
+        (QUOTE (1 2 3))
+        (reverse (QUOTE (1 2 3)))
+        (infixl (QUOTE (1 + 2 + 3)))
+        (infixr (QUOTE (1 + 2 + 3))))))
+
+        (whileS (LAMBDA (p f) (LET
+            ((whileS. (LAMBDA (rec)
+                (infixlE (QUOTE (
+                    p >>= (LAMBDA (c) (COND
+                        (c (infixE))
+                    
+                    )))))
+            ))
+            (whileS. whileS.)
+        ))))
+
+        (evalState (LAMBDA (p s) (fst ((runState p) s))))
+        (execState (LAMBDA (p s) (snd ((runState p) s))))
+
+    ((returnS 3) 4)
 
         (scan-while (QUOTE (LAMBDA (cond body seq)
             (LET 
