@@ -450,11 +450,8 @@ static int lispm_main(struct Page *table, unsigned offs) {
     insert_cstr(BUILTINS[i].name,
                 MAKE_BUILTIN_FN(i) | BUILTINS[i].flags | SPECIAL_READONLY_BIT);
   }
-
-  Sym res = eval0(parse_object(lex()));
-  EVAL_CHECK(is_valid_result(res), ERR_EVAL, res);
-  STACK[0] = SYM_NIL;
-  STACK[1] = res;
+  STACK[1] = eval0(parse_object(lex()));
+  STACK[0] = is_valid_result(STACK[1]) ? SYM_NIL : ERR_EVAL;
   return 0;
 }
 
@@ -465,6 +462,3 @@ Sym lispm_exec(struct Page *table, unsigned offs) {
          : STACK[0] != SYM_NIL ? STACK[0]  /* lex/parse/eval error */
                                : STACK[1]; /* regular result */
 }
-
-#if DEBUG_PRINT
-#endif
