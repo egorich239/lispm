@@ -194,8 +194,10 @@ static Sym lex(void) {
     EVAL_CHECK(PC < PROGRAM_END, ERR_LEX, SYM_NIL);
   } while ((c = *PC++) > ')');
   --PC;
-  return token_val == TOKEN_VAL_NONE ? ensure(token_begin, PC)
-                                     : make_unsigned(token_val);
+  if (token_val == TOKEN_VAL_NONE) return ensure(token_begin, PC);
+  Sym uns = make_unsigned(token_val);
+  EVAL_CHECK(token_val == 0 || *token_begin != '0', ERR_LEX, uns);
+  return uns;
 }
 
 /* parser */
