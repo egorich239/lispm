@@ -26,3 +26,4 @@ extern jmp_buf main_try;
 
 /* allocates read-writeable page */
 void *page_alloc(unsigned size);
+void page_release(void *page, unsigned size);

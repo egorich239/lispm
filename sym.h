@@ -10,6 +10,9 @@
  * -   <CONS> 00 10: stack position of the pair car (CONS), cdr (CONS+1);
  * - <LAMBDA> 01 10: stack position of the triplet captures (LAMBDA), args (+1),
  *                   body (+2);
+ * -    <PTR> 10 10: stack position of the pair page (PTR), offs (PTR+1);
+ *                   page is the page symbol (see below),
+ *                   offs is byte offset off this page, encoded as numerical.
  *
  * The 11 trailing bits are reserved for special symbols;
  * all of them have upper bit zero, which is used by hash table to
@@ -18,6 +21,7 @@
  * - 0 F <OFFS> 00 11: builtin function at the specific offset in the ftable;
  *                     when F bit is 1, it denotes a special form;
  *                     special forms receive their params unevaluated.
+ * - 0   <OFFS> 01 11: page, offs specifies offset in page table;
  * - 0      ... 11 11: special values (assuming 32-bit unsigned)
  *          0000 000F: T
  *          7FFF FFDF: used during evaluation of capture lists of LET;
@@ -92,6 +96,16 @@ static inline unsigned lambda_st_offs(Sym s) {
   return st_obj_st_offs(s);
 }
 
+/* pointer */
+static inline Sym make_pointer(unsigned st_offs) {
+  return (st_offs << 4) | 10u;
+}
+static inline int is_pointer(Sym s) { return (s & 15u) == 10u; }
+static inline unsigned pointer_st_offs(Sym s) {
+  ASSERT(is_pointer(s));
+  return st_obj_st_offs(s);
+}
+
 /* specials, ctors are defined in macros, to be compile time consts */
 #define SPECIAL_READONLY_BIT UPPER_BITS(1)
 static inline int is_special(Sym s) { return (s & 3u) == 3u; }
@@ -113,11 +127,22 @@ static inline unsigned builtin_fn_ft_offs(Sym s) {
   return (s & ~(SPECIAL_READONLY_BIT | SPECIAL_FORM_BIT)) >> 4;
 }
 
-/* special forms */
-#define MAKE_SPECIAL_FORM(val) ((((val) << 4) | 15u) & ~SPECIAL_READONLY_BIT)
+/* pages */
+#define MAKE_PAGE(pt_offs) ((pt_offs << 4) | 7u)
+static inline int is_page(Sym s) { return (s & 15u) == 7u; }
+static inline unsigned page_pt_offs(Sym s) { return s >> 4; }
+
+/* special values */
+#define MAKE_SPECIAL_VALUE(val) ((((val) << 4) | 15u) & ~SPECIAL_READONLY_BIT)
 
 #define SYM_NIL      0u
-#define SYM_T        MAKE_SPECIAL_FORM(0)
-#define SYM_BINDING  MAKE_SPECIAL_FORM(~0u - 2)
-#define SYM_CAPTURED MAKE_SPECIAL_FORM(~0u - 1)
-#define SYM_NO_ASSOC MAKE_SPECIAL_FORM(~0u - 0)
+#define SYM_T        MAKE_SPECIAL_VALUE(0)
+#define SYM_BINDING  MAKE_SPECIAL_VALUE(~0u - 2)
+#define SYM_CAPTURED MAKE_SPECIAL_VALUE(~0u - 1)
+#define SYM_NO_ASSOC MAKE_SPECIAL_VALUE(~0u - 0)
+
+#define ERR_INIT  MAKE_SPECIAL_VALUE(~0u - 1024)
+#define ERR_OOM   MAKE_SPECIAL_VALUE(~0u - 1025)
+#define ERR_LEX   MAKE_SPECIAL_VALUE(~0u - 1026)
+#define ERR_PARSE MAKE_SPECIAL_VALUE(~0u - 1027)
+#define ERR_EVAL  MAKE_SPECIAL_VALUE(~0u - 1028)

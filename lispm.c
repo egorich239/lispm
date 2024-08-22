@@ -2,25 +2,10 @@
 #include "rt.h"
 #include "sym.h"
 
-#define DEBUG_PRINT 1
-#if DEBUG_PRINT
-#include <stdio.h>
-static void lispm_dump(Sym sym);
-#define LOG(fmt, ...) fprintf(stderr, "[%d] " fmt, __LINE__, __VA_ARGS__)
-#define DUMP(sym)     lispm_dump(sym)
-#else
-#define LOG(fmt, ...) ((void)(fmt))
-#define DUMP(sym)     ((void)(sym))
-#endif
-
-static int STATUS;
 /* Unlike ASSERT, these errors are caused by a bug in the user code. */
-#define THROW_UNLESS(cond, err, ctx)                                           \
+#define EVAL_CHECK(cond, err, ctx)                                             \
   do {                                                                         \
-    if (!(cond)) {                                                             \
-      STATUS = (err);                                                          \
-      THROW(1);                                                                \
-    }                                                                          \
+    if (!(cond)) report_error(err, ctx);                                       \
   } while (0)
 
 /* builtins: functions and special forms */
@@ -32,33 +17,38 @@ struct builtin_fn {
 
 /* state */
 static struct Page *PAGE_TABLE;
-#define PAGE_PROGRAM ((0u << 2) | 3u)
 
 /* program text counter */
+static const char *PROGRAM_END;
 static const char *PC;
 
 /* the hash table */
-static unsigned *STRINGS_INDEX;
-static char *STRINGS_TABLE;
+static unsigned *INDEX;
+static char *STRINGS;
+static unsigned INDEX_SIZE;
+static unsigned STRINGS_SIZE;
 static unsigned TP;
 
 /* the evaluation stack */
 static Sym *STACK;
+static Sym *STACK_END;
 static unsigned SP; /* grows down */
 static unsigned PP; /* parser pointer, grows up */
 
-/* stack functions */
-static inline void init_stack(void) {
-  STACK = page_alloc(STACK_SIZE * sizeof(Sym));
-  PP = 8; /* SP may grow below PP by several slots, because cons() and lambda()
-             constructors perform check after the fact */
-  SP = STACK_SIZE;
-  THROW_UNLESS(STACK, STATUS_OOM, 3);
+/* error reporting */
+__attribute__((noreturn)) static void report_error(Sym err, Sym ctx) {
+  ASSERT(STACK);
+  STACK[0] = err;
+  STACK[1] = ctx;
+  THROW(1);
 }
+
+/* stack functions */
 static Sym cons(Sym car, Sym cdr) {
-  STACK[--SP] = cdr;
-  STACK[--SP] = car;
-  THROW_UNLESS(PP < SP, STATUS_OOM, 3);
+  SP -= 2;
+  EVAL_CHECK(PP < SP, ERR_OOM, SYM_NIL);
+  STACK[SP + 0] = car;
+  STACK[SP + 1] = cdr;
   return make_cons(SP);
 }
 static inline void cons_unpack(Sym a, Sym *car, Sym *cdr) {
@@ -67,10 +57,11 @@ static inline void cons_unpack(Sym a, Sym *car, Sym *cdr) {
   *cdr = STACK[cons_st_offs(a) + 1];
 }
 static Sym lambda(Sym captures, Sym args, Sym body) {
-  STACK[--SP] = body;
-  STACK[--SP] = args;
-  STACK[--SP] = captures;
-  THROW_UNLESS(PP < SP, STATUS_OOM, 3);
+  SP -= 3;
+  EVAL_CHECK(PP < SP, ERR_OOM, SYM_NIL);
+  STACK[SP + 0] = captures;
+  STACK[SP + 1] = args;
+  STACK[SP + 2] = body;
   return make_lambda(SP);
 }
 static void lambda_unpack(Sym a, Sym *captures, Sym *args, Sym *body) {
@@ -116,59 +107,47 @@ static inline int str_eq(const char *b, const char *e, const char *h) {
 }
 static inline Sym has_readonly_assoc(Sym s) {
   ASSERT(is_literal(s));
-  const Sym a = STRINGS_INDEX[literal_ht_offs(s) + 1];
+  const Sym a = INDEX[literal_ht_offs(s) + 1];
   return is_special(a) && special_is_readonly(a);
 }
 static inline Sym get_assoc(Sym s) {
   ASSERT(is_literal(s));
-  const Sym a = STRINGS_INDEX[literal_ht_offs(s) + 1];
-  THROW_UNLESS(a != SYM_NO_ASSOC, STATUS_EVAL, s);
+  const Sym a = INDEX[literal_ht_offs(s) + 1];
+  EVAL_CHECK(a != SYM_NO_ASSOC, ERR_EVAL, s);
   return !is_special(a) ? a : (a & ~SPECIAL_READONLY_BIT);
 }
 static inline Sym set_assoc(Sym s, Sym assoc) {
-  Sym *a = STRINGS_INDEX + (literal_ht_offs(s) + 1);
-  THROW_UNLESS(!is_special(*a) || !special_is_readonly(*a), STATUS_EVAL, s);
+  Sym *a = INDEX + (literal_ht_offs(s) + 1);
+  EVAL_CHECK(!is_special(*a) || !special_is_readonly(*a), ERR_EVAL, s);
   const Sym old_assoc = *a;
   return *a = assoc, old_assoc;
 }
 static inline const char *literal_name(Sym s) {
   ASSERT(is_literal(s));
-  return STRINGS_TABLE + STRINGS_INDEX[literal_ht_offs(s)];
+  return STRINGS + INDEX[literal_ht_offs(s)];
 }
 
 static Sym insert_cstr(const char *lit, Sym assoc);
-static void init_table(const struct builtin_fn *fns, int sz) {
-  STRINGS_TABLE = page_alloc(STRINGS_SIZE);
-  STRINGS_INDEX = page_alloc(STRINGS_INDEX_SIZE * 2 * sizeof(unsigned));
-  THROW_UNLESS(STRINGS_TABLE && STRINGS_INDEX, STATUS_OOM, 3);
-
-  TP = 4; /* no symbol starts at offset 0 of the table string */
-  insert_cstr("T", SYM_T | SPECIAL_READONLY_BIT);
-  for (int i = 0; i < sz; ++i) {
-    insert_cstr(fns[i].name,
-                MAKE_BUILTIN_FN(i) | fns[i].flags | SPECIAL_READONLY_BIT);
-  }
-}
 static Sym ensure(const char *b, const char *e) {
   unsigned offset = djb2(b, e, 5381u);
   const unsigned step = 2 * djb2(b, e, ~offset) + 1; /* must be non-zero */
   int attempt = 0;
   for (; attempt < STRINGS_INDEX_LOOKUP_LIMIT; ++attempt, offset += step) {
-    offset &= (STRINGS_INDEX_SIZE - 1);
-    unsigned *entry = STRINGS_INDEX + (2 * offset);
+    offset &= (INDEX_SIZE - 1);
+    unsigned *entry = INDEX + (2 * offset);
     if (!*entry) break; /* empty slot */
-    if (str_eq(b, e, STRINGS_TABLE + *entry))
+    if (str_eq(b, e, STRINGS + *entry))
       return make_literal(2 * offset); /* found! */
   }
-  THROW_UNLESS(attempt < STRINGS_INDEX_LOOKUP_LIMIT, STATUS_OOM, 3);
-  THROW_UNLESS(TP + (e - b + 1) <= STRINGS_SIZE, STATUS_OOM, 3);
+  EVAL_CHECK(attempt < STRINGS_INDEX_LOOKUP_LIMIT, ERR_OOM, SYM_NIL);
+  EVAL_CHECK(TP + (e - b + 1) <= STRINGS_SIZE, ERR_OOM, SYM_NIL);
 
-  unsigned *entry = STRINGS_INDEX + (2 * offset);
+  unsigned *entry = INDEX + (2 * offset);
   entry[0] = TP;
   entry[1] = SYM_NO_ASSOC;
   while (b != e)
-    STRINGS_TABLE[TP++] = *b++;
-  STRINGS_TABLE[TP++] = 0;
+    STRINGS[TP++] = *b++;
+  STRINGS[TP++] = 0;
   TP += 3u, TP &= ~3u;
   return make_literal(2 * offset);
 }
@@ -191,7 +170,7 @@ static Sym insert_cstr(const char *lit, Sym assoc) {
 static Sym lex(void) {
   unsigned c;
   do
-    THROW_UNLESS(PC < PAGE_TABLE[PAGE_PROGRAM].end, STATUS_LEX, 3);
+    EVAL_CHECK(PC < PROGRAM_END, ERR_LEX, SYM_NIL);
   while ((c = *PC++) <= ' ');
   if (c == '(' || c == ')') return TOK_SYM(c);
 
@@ -202,17 +181,17 @@ static Sym lex(void) {
 
   do {
     /* keep some symbols unavailable to regular tokens: !"#$%& */
-    THROW_UNLESS(')' < c && c < 127u, STATUS_LEX, 3);
+    EVAL_CHECK(')' < c && c < 127u, ERR_LEX, SYM_NIL);
     if (token_val != TOKEN_VAL_NONE && '0' <= c && c <= '9') {
       int overflow =
           __builtin_umul_overflow(token_val, 10u, &token_val) ||
           __builtin_uadd_overflow(token_val, (unsigned)(c - '0'), &token_val) ||
           token_val > TOKEN_VAL_MAX;
-      THROW_UNLESS(!overflow, STATUS_LEX, 3);
+      EVAL_CHECK(!overflow, ERR_LEX, SYM_NIL);
     } else {
       token_val = TOKEN_VAL_NONE; /* not an integer literal */
     }
-    THROW_UNLESS(PC < PAGE_TABLE[PAGE_PROGRAM].end, STATUS_LEX, 3);
+    EVAL_CHECK(PC < PROGRAM_END, ERR_LEX, SYM_NIL);
   } while ((c = *PC++) > ')');
   --PC;
   return token_val == TOKEN_VAL_NONE ? ensure(token_begin, PC)
@@ -222,11 +201,11 @@ static Sym lex(void) {
 /* parser */
 static Sym parse_object(Sym tok) {
   if (is_atom(tok)) return tok;
-  THROW_UNLESS(tok == TOK_LPAREN, STATUS_PARSE, 3);
+  EVAL_CHECK(tok == TOK_LPAREN, ERR_PARSE, SYM_NIL);
   if ((tok = lex()) == TOK_RPAREN) return SYM_NIL;
   unsigned low_mark = PP;
   while (tok != TOK_RPAREN) {
-    THROW_UNLESS(++PP < SP, STATUS_PARSE, tok);
+    EVAL_CHECK(++PP < SP, ERR_PARSE, tok);
     STACK[PP - 1] = parse_object(tok);
     tok = lex();
   }
@@ -245,7 +224,7 @@ static inline int is_valid_result(Sym e) {
 }
 static void cons_unpack_user(Sym a, Sym *car, Sym *cdr) {
   /* cons unpack on user input; soft failure mode */
-  THROW_UNLESS(is_cons(a), STATUS_EVAL, a);
+  EVAL_CHECK(is_cons(a), ERR_EVAL, a);
   cons_unpack(a, car, cdr);
 }
 static void restore_shadow(Sym s, Sym s0) {
@@ -259,7 +238,7 @@ static void restore_shadow(Sym s, Sym s0) {
 static inline Sym evquote(Sym a) {
   Sym r, n;
   cons_unpack_user(a, &r, &n);
-  THROW_UNLESS(is_nil(n), STATUS_EVAL, a);
+  EVAL_CHECK(is_nil(n), ERR_EVAL, a);
   return r;
 }
 static Sym evcon(Sym bs) {
@@ -269,7 +248,7 @@ static Sym evcon(Sym bs) {
     cons_unpack_user(b, &c, &a);
     if (!is_nil(eval0(c))) return eval0(evquote(a));
   }
-  THROW_UNLESS(0, STATUS_EVAL, bs);
+  EVAL_CHECK(0, ERR_EVAL, bs);
 }
 static Sym evcap(Sym p, Sym b, Sym c0);
 static Sym evlambda(Sym t) {
@@ -308,8 +287,7 @@ static inline Sym ATOM(Sym a) { return is_atom(evquote(a)) ? SYM_T : SYM_NIL; }
 static inline Sym EQ(Sym a) {
   Sym x, y;
   cons_unpack_user(a, &x, &y);
-  y = evquote(y);
-  return is_atom(x) && x == y ? SYM_T : SYM_NIL;
+  return x == evquote(y) && is_atom(x) ? SYM_T : SYM_NIL;
 }
 static inline Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
   return eval0(evquote(e));
@@ -417,7 +395,7 @@ static Sym evapply(Sym e) {
   if (is_special_form(f)) return BUILTINS[builtin_fn_ft_offs(f)].fn(a);
   a = evlis(a);
   if (is_builtin_fn(f)) return BUILTINS[builtin_fn_ft_offs(f)].fn(a);
-  THROW_UNLESS(is_lambda(f), STATUS_EVAL, f);
+  EVAL_CHECK(is_lambda(f), ERR_EVAL, f);
   Sym c, p, b, as, n, v;
   lambda_unpack(f, &c, &p, &b);
   Sym s = SYM_NIL;
@@ -432,7 +410,7 @@ static Sym evapply(Sym e) {
     cons_unpack_user(a, &v, &a);
     s = cons(cons(n, set_assoc(n, v)), s);
   }
-  THROW_UNLESS(is_nil(a), STATUS_EVAL, a);
+  EVAL_CHECK(is_nil(a), ERR_EVAL, a);
   Sym res = eval0(b);
   return restore_shadow(s, SYM_NIL), res;
 }
@@ -444,95 +422,49 @@ static Sym eval0(Sym e) {
   return gc(evapply(e), mark);
 }
 
-static Sym eval(Sym e) {
-  e = eval0(e);
-  THROW_UNLESS(is_valid_result(e), STATUS_EVAL, e);
-  return e;
-}
+/* API */
+static int lispm_main(struct Page *table, unsigned offs) {
+  if (!(PAGE_TABLE = table)) return 1;
+  for (int i = 0; i < PAGE_TABLE_PRELUDE_SIZE; ++i)
+    if (!PAGE_TABLE[i].begin) return 1;
 
-#define TAR_CONTENT_OFFSET 512u
-static void lispm_main(struct Page *program) {
-  STATUS = STATUS_OK;
-  PAGE_TABLE = page_alloc(PAGE_TABLE_SIZE);
-  THROW_UNLESS(PAGE_TABLE, STATUS_OOM, 3);
-  PAGE_TABLE[PAGE_PROGRAM] = *program;
-  PC = program->begin + TAR_CONTENT_OFFSET;
+  PROGRAM_END = table[page_pt_offs(PAGE_PROGRAM)].end;
+  PC = table[page_pt_offs(PAGE_PROGRAM)].begin + offs;
 
-  init_stack();
-  init_table(BUILTINS, sizeof(BUILTINS) / sizeof(*BUILTINS));
-  Sym res = eval(parse_object(lex()));
-  DUMP(res);
-}
+  STACK = PAGE_TABLE[page_pt_offs(PAGE_STACK)].begin;
+  STACK_END = PAGE_TABLE[page_pt_offs(PAGE_STACK)].end;
+  PP = 64;
+  SP = STACK_END - STACK;
+  if (SP <= PP) return 1;
 
-__attribute__((noreturn)) void lispm_start(struct Page *program) {
-  TRY(lispm_main(program));
-#if DEBUG_PRINT
-  if (STATUS == STATUS_EVAL) {
-    unsigned tp = 4;
-    while (STRINGS_TABLE[tp]) {
-      const char *e = STRINGS_TABLE + tp;
-      while (*e)
-        ++e;
-      fprintf(stderr, "%s:\n", STRINGS_TABLE + tp);
-      Sym s = ensure(STRINGS_TABLE + tp, e);
-      Sym a = STRINGS_INDEX[literal_ht_offs(s) + 1];
-      DUMP(a);
-      tp = (e - STRINGS_TABLE) + 4;
-      tp &= ~3u;
-    }
+  STRINGS = PAGE_TABLE[page_pt_offs(PAGE_STRINGS)].begin;
+  STRINGS_SIZE = ((char *)PAGE_TABLE[page_pt_offs(PAGE_STRINGS)].end) - STRINGS;
+  INDEX = PAGE_TABLE[page_pt_offs(PAGE_INDEX)].begin;
+  INDEX_SIZE =
+      (((unsigned *)PAGE_TABLE[page_pt_offs(PAGE_INDEX)].end) - INDEX) / 2;
+  if (INDEX_SIZE & (INDEX_SIZE - 1)) return 1;
+
+  TP = 4; /* no symbol starts at offset 0 of the table string */
+  insert_cstr("T", SYM_T | SPECIAL_READONLY_BIT);
+  for (int i = 0; i < sizeof(BUILTINS) / sizeof(*BUILTINS); ++i) {
+    insert_cstr(BUILTINS[i].name,
+                MAKE_BUILTIN_FN(i) | BUILTINS[i].flags | SPECIAL_READONLY_BIT);
   }
-#endif
-  FIN(STATUS);
+
+  Sym res = eval0(parse_object(lex()));
+  EVAL_CHECK(is_valid_result(res), ERR_EVAL, res);
+  STACK[0] = SYM_NIL;
+  STACK[1] = res;
+  return 0;
+}
+
+Sym lispm_exec(struct Page *table, unsigned offs) {
+  int failed_init = 0;
+  TRY(failed_init = lispm_main(table, offs));
+  return failed_init           ? ERR_INIT  /* init error */
+         : STACK[0] != SYM_NIL ? STACK[0]  /* lex/parse/eval error */
+                               : STACK[1]; /* regular result */
 }
 
 #if DEBUG_PRINT
-static inline void lispm_dump(Sym sym) {
-  static int indent = 0;
-  static int same_line = 0;
-
-  if (!same_line)
-    for (int i = 0; i < indent; ++i)
-      fprintf(stderr, " ");
-  same_line = 0;
-
-  if (is_nil(sym)) {
-    fprintf(stderr, "()\n");
-  } else if (sym == SYM_T) {
-    fprintf(stderr, "T\n");
-  } else if (is_unsigned(sym)) {
-    fprintf(stderr, "%u\n", sym >> 2);
-  } else if (is_literal(sym)) {
-    fprintf(stderr, "%s\n", literal_name(sym));
-  } else if (is_special(sym)) {
-    fprintf(stderr, "<special %u>\n", sym);
-  } else if (is_cons(sym)) {
-    fprintf(stderr, "(");
-    indent += 2;
-    same_line = 1;
-    while (is_cons(sym)) {
-      Sym car;
-      cons_unpack(sym, &car, &sym);
-      lispm_dump(car);
-    }
-    if (!is_nil(sym)) {
-      lispm_dump(sym);
-    }
-    indent -= 2;
-    for (int i = 0; i < indent; ++i)
-      fprintf(stderr, " ");
-    fprintf(stderr, !is_nil(sym) ? "!)\n" : ")\n");
-  } else if (is_lambda(sym)) {
-    Sym cap, par, body;
-    lambda_unpack(sym, &cap, &par, &body);
-    fprintf(stderr, "(LAMBDA\n");
-    indent += 2;
-    lispm_dump(par);
-    lispm_dump(body);
-    lispm_dump(cap);
-    indent -= 2;
-    for (int i = 0; i < indent; ++i)
-      fprintf(stderr, " ");
-    fprintf(stderr, ")\n");
-  }
-}
 #endif

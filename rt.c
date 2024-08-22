@@ -11,3 +11,8 @@ void *page_alloc(unsigned size) {
   return mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
               -1, 0);
 }
+
+void page_release(void *page, unsigned int size) {
+  int res = munmap(page, size);
+  ASSERT(!res);
+}

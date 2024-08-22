@@ -5,7 +5,11 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include "debug.h"
 #include "lispm.h"
+#include "support.h"
+
+#define TAR_CONTENT_OFFSET 512
 
 int main(int argc, char *argv[]) {
   if (argc < 2) return 1;
@@ -20,5 +24,7 @@ int main(int argc, char *argv[]) {
   struct Page program;
   program.begin = page_begin;
   program.end = program.begin + stat.st_size;
-  lispm_start(&program);
+  struct Page *table = lispm_alloc_pages(&program);
+  Sym result = lispm_exec(table, TAR_CONTENT_OFFSET);
+  lispm_dump(table, result);
 }
