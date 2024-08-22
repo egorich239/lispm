@@ -1,5 +1,6 @@
 (LET 
     (
+        (compose (LAMBDA (f g) (LAMBDA (x) (f (g x)))))
         (nil (QUOTE ()))
         (true (QUOTE T))
         
@@ -17,7 +18,6 @@
         (cadr (LAMBDA (seq) (CAR (CDR seq))))
         (cddr (LAMBDA (seq) (CDR (CDR seq))))
 
-        (compose (LAMBDA (f g) (LAMBDA (x) (f (g x)))))
 
         (pair CONS)
         (pair~ (LAMBDA (x y) (pair y x)))

@@ -15,15 +15,17 @@
  * all of them have upper bit zero, which is used by hash table to
  * mark the literals that cannot be overriden by a locally bound variable.
  *
- * - 0 <OFFS> 00 11: builtin function at the specific offset in the ftable;
- * - 0    ... 11 11: special forms (T, CONS, LET, ...)
- *              ...: (assuming 32-bit unsigned)
- *        7FFF FFDF: used during evaluation of capture lists of LET;
+ * - 0 F <OFFS> 00 11: builtin function at the specific offset in the ftable;
+ *                     when F bit is 1, it denotes a special form;
+ *                     special forms receive their params unevaluated.
+ * - 0      ... 11 11: special values (assuming 32-bit unsigned)
+ *          0000 000F: T
+ *          7FFF FFDF: used during evaluation of capture lists of LET;
  *                   marks a literal first defined in the previous part of
  *                   the LET evaluations;
- *        7FFF FFEF: used during evaluation of capture lists of LAMBDA/LET;
+ *          7FFF FFEF: used during evaluation of capture lists of LAMBDA/LET;
  *                   marks a literal already in the capture list;
- *        7FFF FFFF: no value currently associated with the literal.
+ *          7FFF FFFF: no value currently associated with the literal.
  */
 typedef unsigned Sym;
 
@@ -99,24 +101,23 @@ static inline int special_is_readonly(Sym s) {
 }
 
 /* builtin functions */
-#define MAKE_BUILTIN_FN(ft_offs)                                               \
-  ((((ft_offs) << 4) | 3u) | SPECIAL_READONLY_BIT)
+/* special forms receive their arguments un-evaluated */
+#define SPECIAL_FORM_BIT         (UPPER_BITS(1) >> 1)
+#define MAKE_BUILTIN_FN(ft_offs) (((ft_offs) << 4) | 3u)
 static inline int is_builtin_fn(Sym s) { return (s & 15u) == 3u; }
+static inline int is_special_form(Sym s) {
+  return (s & (SPECIAL_FORM_BIT | 15u)) == (SPECIAL_FORM_BIT | 3u);
+}
 static inline unsigned builtin_fn_ft_offs(Sym s) {
   ASSERT(is_builtin_fn(s));
-  return (s & ~SPECIAL_READONLY_BIT) >> 4;
+  return (s & ~(SPECIAL_READONLY_BIT | SPECIAL_FORM_BIT)) >> 4;
 }
 
 /* special forms */
 #define MAKE_SPECIAL_FORM(val) ((((val) << 4) | 15u) & ~SPECIAL_READONLY_BIT)
 
-#define SYM_NIL    0u
-#define SYM_T      MAKE_SPECIAL_FORM(0)
-#define SYM_QUOTE  MAKE_SPECIAL_FORM(1)
-#define SYM_COND   MAKE_SPECIAL_FORM(2)
-#define SYM_LAMBDA MAKE_SPECIAL_FORM(3)
-#define SYM_LET    MAKE_SPECIAL_FORM(4)
-
+#define SYM_NIL      0u
+#define SYM_T        MAKE_SPECIAL_FORM(0)
 #define SYM_BINDING  MAKE_SPECIAL_FORM(~0u - 2)
 #define SYM_CAPTURED MAKE_SPECIAL_FORM(~0u - 1)
 #define SYM_NO_ASSOC MAKE_SPECIAL_FORM(~0u - 0)

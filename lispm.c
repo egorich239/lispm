@@ -23,20 +23,12 @@ static int STATUS;
     }                                                                          \
   } while (0)
 
-/* builtin function symbols */
-static Sym CONS(Sym a);
-static Sym CAR(Sym a);
-static Sym CDR(Sym a);
-static Sym ATOM(Sym a);
-static Sym EQ(Sym a);
-static Sym EVAL(Sym a);
+/* builtins: functions and special forms */
 struct builtin_fn {
   Sym (*fn)(Sym args);
   const char *name;
+  unsigned flags;
 };
-static const struct builtin_fn BUILTINS[] = {{CONS, "CONS"}, {CAR, "CAR"},
-                                             {CDR, "CDR"},   {ATOM, "ATOM"},
-                                             {EQ, "EQ"},     {EVAL, "EVAL"}};
 
 /* state */
 static struct Page *PAGE_TABLE;
@@ -145,19 +137,16 @@ static inline const char *literal_name(Sym s) {
 }
 
 static Sym insert_cstr(const char *lit, Sym assoc);
-static void init_table(void) {
+static void init_table(const struct builtin_fn *fns, int sz) {
   STRINGS_TABLE = page_alloc(STRINGS_SIZE);
   STRINGS_INDEX = page_alloc(STRINGS_INDEX_SIZE * 2 * sizeof(unsigned));
   THROW_UNLESS(STRINGS_TABLE && STRINGS_INDEX, STATUS_OOM, 3);
 
   TP = 4; /* no symbol starts at offset 0 of the table string */
   insert_cstr("T", SYM_T | SPECIAL_READONLY_BIT);
-  insert_cstr("QUOTE", SYM_QUOTE | SPECIAL_READONLY_BIT);
-  insert_cstr("COND", SYM_COND | SPECIAL_READONLY_BIT);
-  insert_cstr("LAMBDA", SYM_LAMBDA | SPECIAL_READONLY_BIT);
-  insert_cstr("LET", SYM_LET | SPECIAL_READONLY_BIT);
-  for (unsigned i = 0; i < sizeof(BUILTINS) / sizeof(*BUILTINS); ++i) {
-    insert_cstr(BUILTINS[i].name, MAKE_BUILTIN_FN(i) | SPECIAL_READONLY_BIT);
+  for (int i = 0; i < sz; ++i) {
+    insert_cstr(fns[i].name,
+                MAKE_BUILTIN_FN(i) | fns[i].flags | SPECIAL_READONLY_BIT);
   }
 }
 static Sym ensure(const char *b, const char *e) {
@@ -254,21 +243,10 @@ static inline int is_t(Sym e) { return e == SYM_T; }
 static inline int is_valid_result(Sym e) {
   return is_nil(e) || is_t(e) || is_atom(e) || is_cons(e);
 }
-static Sym eval(Sym e) {
-  e = eval0(e);
-  THROW_UNLESS(is_valid_result(e), STATUS_EVAL, e);
-  return e;
-}
 static void cons_unpack_user(Sym a, Sym *car, Sym *cdr) {
   /* cons unpack on user input; soft failure mode */
   THROW_UNLESS(is_cons(a), STATUS_EVAL, a);
   cons_unpack(a, car, cdr);
-}
-static inline Sym cons_unwrap_last(Sym a) {
-  Sym r, n;
-  cons_unpack_user(a, &r, &n);
-  THROW_UNLESS(is_nil(n), STATUS_EVAL, a);
-  return r;
 }
 static void restore_shadow(Sym s, Sym s0) {
   while (s != s0) {
@@ -278,55 +256,80 @@ static void restore_shadow(Sym s, Sym s0) {
     set_assoc(n, v);
   }
 }
+static inline Sym evquote(Sym a) {
+  Sym r, n;
+  cons_unpack_user(a, &r, &n);
+  THROW_UNLESS(is_nil(n), STATUS_EVAL, a);
+  return r;
+}
 static Sym evcon(Sym bs) {
   Sym b, c, a;
   while (!is_nil(bs)) {
     cons_unpack_user(bs, &b, &bs);
     cons_unpack_user(b, &c, &a);
-    if (!is_nil(eval0(c))) return eval0(cons_unwrap_last(a));
+    if (!is_nil(eval0(c))) return eval0(evquote(a));
   }
   THROW_UNLESS(0, STATUS_EVAL, bs);
+}
+static Sym evcap(Sym p, Sym b, Sym c0);
+static Sym evlambda(Sym t) {
+  Sym p, b;
+  cons_unpack_user(t, &p, &b);
+  b = evquote(b);
+  return lambda(evcap(p, b, SYM_NIL), p, b);
 }
 static Sym evlet(Sym e) {
   Sym c, b, a, n, v;
   cons_unpack_user(e, &c, &b);
-  b = cons_unwrap_last(b);
+  b = evquote(b);
   while (!is_nil(c)) {
     cons_unpack_user(c, &a, &c);
     cons_unpack_user(a, &n, &v);
-    set_assoc(n, eval0(cons_unwrap_last(v)));
+    set_assoc(n, eval0(evquote(v)));
   }
   return eval0(b);
 }
-static Sym evlis(Sym e) {
-  if (is_nil(e)) return e;
-  Sym a, d;
-  cons_unpack_user(e, &a, &d);
-  return cons(eval0(a), evlis(d));
+static inline Sym CONS(Sym a) {
+  Sym x, y;
+  cons_unpack_user(a, &x, &y);
+  return cons(x, evquote(y));
 }
-static Sym evapply(Sym f, Sym a) {
-  f = eval0(f);
-  a = evlis(a);
-  if (is_builtin_fn(f)) return BUILTINS[builtin_fn_ft_offs(f)].fn(a);
-  THROW_UNLESS(is_lambda(f), STATUS_EVAL, f);
-  Sym c, p, b, as, n, v;
-  lambda_unpack(f, &c, &p, &b);
-  Sym s = SYM_NIL;
-  while (!is_nil(c)) { /* captures */
-    cons_unpack(c, &as, &c);
-    cons_unpack(as, &n, &v);
-    ASSERT(v != SYM_BINDING);
-    s = cons(cons(n, set_assoc(n, v)), s);
-  }
-  while (!is_nil(p)) { /* params */
-    cons_unpack_user(p, &n, &p);
-    cons_unpack_user(a, &v, &a);
-    s = cons(cons(n, set_assoc(n, v)), s);
-  }
-  THROW_UNLESS(is_nil(a), STATUS_EVAL, a);
-  Sym res = eval0(b);
-  return restore_shadow(s, SYM_NIL), res;
+static inline Sym CAR(Sym a) {
+  Sym car, cdr;
+  cons_unpack_user(evquote(a), &car, &cdr);
+  return car;
 }
+static inline Sym CDR(Sym a) {
+  Sym car, cdr;
+  cons_unpack_user(evquote(a), &car, &cdr);
+  return cdr;
+}
+static inline Sym ATOM(Sym a) { return is_atom(evquote(a)) ? SYM_T : SYM_NIL; }
+static inline Sym EQ(Sym a) {
+  Sym x, y;
+  cons_unpack_user(a, &x, &y);
+  y = evquote(y);
+  return is_atom(x) && x == y ? SYM_T : SYM_NIL;
+}
+static inline Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
+  return eval0(evquote(e));
+}
+static const struct builtin_fn BUILTINS[] = {
+    {evquote, "QUOTE", SPECIAL_FORM_BIT},
+    {evcon, "COND", SPECIAL_FORM_BIT},
+    {evlambda, "LAMBDA", SPECIAL_FORM_BIT},
+    {evlet, "LET", SPECIAL_FORM_BIT},
+    {CONS, "CONS"},
+    {CAR, "CAR"},
+    {CDR, "CDR"},
+    {ATOM, "ATOM"},
+    {EQ, "EQ"},
+    {EVAL, "EVAL"}};
+#define SYM_QUOTE  (MAKE_BUILTIN_FN(0) | SPECIAL_FORM_BIT)
+#define SYM_COND   (MAKE_BUILTIN_FN(1) | SPECIAL_FORM_BIT)
+#define SYM_LAMBDA (MAKE_BUILTIN_FN(2) | SPECIAL_FORM_BIT)
+#define SYM_LET    (MAKE_BUILTIN_FN(3) | SPECIAL_FORM_BIT)
+
 static Sym evcap0(Sym p, Sym c);
 static Sym evcap_remove_bindings(Sym c, Sym c0) {
   if (c == c0) return c0;
@@ -352,7 +355,7 @@ static Sym evcap_con(Sym bs, Sym c) {
     cons_unpack_user(bs, &b, &bs);
     cons_unpack_user(b, &q, &e);
     c = evcap0(q, c);
-    c = evcap0(cons_unwrap_last(e), c);
+    c = evcap0(evquote(e), c);
   }
   return c;
 }
@@ -362,7 +365,7 @@ static Sym evcap_let(Sym t, Sym c0) {
   while (!is_nil(a)) {
     cons_unpack_user(a, &b, &a);
     cons_unpack_user(b, &n, &e1);
-    c = evcap0(cons_unwrap_last(e1), c);
+    c = evcap0(evquote(e1), c);
     c = cons(cons(n, set_assoc(n, SYM_BINDING)), c);
   }
   c = evcap0(e, c);
@@ -383,14 +386,14 @@ static Sym evcap0(Sym p, Sym c) {
   if (is_literal(a)) {
     switch (get_assoc(a)) {
     case SYM_QUOTE:
-      return cons_unwrap_last(t), c;
+      return evquote(t), c;
     case SYM_COND:
       return evcap_con(t, c);
     case SYM_LET:
       return evcap_let(t, c);
     case SYM_LAMBDA:
       cons_unpack_user(t, &p, &b);
-      b = cons_unwrap_last(b);
+      b = evquote(b);
       return evcap(p, b, c);
     }
   }
@@ -400,63 +403,51 @@ static Sym evcap0(Sym p, Sym c) {
   }
   return c;
 }
-static Sym evlambda(Sym t) {
-  Sym p, b;
-  cons_unpack_user(t, &p, &b);
-  b = cons_unwrap_last(b);
-  return lambda(evcap(p, b, SYM_NIL), p, b);
+static Sym evlis(Sym e) {
+  if (is_nil(e)) return e;
+  Sym a, d;
+  cons_unpack_user(e, &a, &d);
+  return cons(eval0(a), evlis(d));
+}
+static Sym evapply(Sym e) {
+  Sym f, a;
+  cons_unpack_user(e, &f, &a);
+
+  f = eval0(f);
+  if (is_special_form(f)) return BUILTINS[builtin_fn_ft_offs(f)].fn(a);
+  a = evlis(a);
+  if (is_builtin_fn(f)) return BUILTINS[builtin_fn_ft_offs(f)].fn(a);
+  THROW_UNLESS(is_lambda(f), STATUS_EVAL, f);
+  Sym c, p, b, as, n, v;
+  lambda_unpack(f, &c, &p, &b);
+  Sym s = SYM_NIL;
+  while (!is_nil(c)) { /* captures */
+    cons_unpack(c, &as, &c);
+    cons_unpack(as, &n, &v);
+    ASSERT(v != SYM_BINDING);
+    s = cons(cons(n, set_assoc(n, v)), s);
+  }
+  while (!is_nil(p)) { /* params */
+    cons_unpack_user(p, &n, &p);
+    cons_unpack_user(a, &v, &a);
+    s = cons(cons(n, set_assoc(n, v)), s);
+  }
+  THROW_UNLESS(is_nil(a), STATUS_EVAL, a);
+  Sym res = eval0(b);
+  return restore_shadow(s, SYM_NIL), res;
 }
 static Sym eval0(Sym e) {
   if (is_unsigned(e)) return e;
   if (is_literal(e)) return get_assoc(e);
 
   unsigned mark = SP;
-  Sym a, t;
-  cons_unpack_user(e, &a, &t);
-  if (is_literal(a)) {
-    switch (get_assoc(a)) {
-    case SYM_NIL:
-    case SYM_T:
-      return a;
-    case SYM_QUOTE:
-      return cons_unwrap_last(t);
-    case SYM_COND:
-      return gc(evcon(t), mark);
-    case SYM_LET:
-      return gc(evlet(t), mark);
-    case SYM_LAMBDA:
-      return gc(evlambda(t), mark);
-    }
-  }
-  return gc(evapply(a, t), mark);
+  return gc(evapply(e), mark);
 }
 
-static inline Sym CONS(Sym a) {
-  Sym x, y;
-  cons_unpack_user(a, &x, &y);
-  return cons(x, cons_unwrap_last(y));
-}
-static inline Sym CAR(Sym a) {
-  Sym car, cdr;
-  cons_unpack_user(cons_unwrap_last(a), &car, &cdr);
-  return car;
-}
-static inline Sym CDR(Sym a) {
-  Sym car, cdr;
-  cons_unpack_user(cons_unwrap_last(a), &car, &cdr);
-  return cdr;
-}
-static inline Sym ATOM(Sym a) {
-  return is_atom(cons_unwrap_last(a)) ? SYM_T : SYM_NIL;
-}
-static inline Sym EQ(Sym a) {
-  Sym x, y;
-  cons_unpack_user(a, &x, &y);
-  y = cons_unwrap_last(y);
-  return is_atom(x) && x == y ? SYM_T : SYM_NIL;
-}
-static inline Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
-  return eval0(cons_unwrap_last(e));
+static Sym eval(Sym e) {
+  e = eval0(e);
+  THROW_UNLESS(is_valid_result(e), STATUS_EVAL, e);
+  return e;
 }
 
 #define TAR_CONTENT_OFFSET 512u
@@ -468,7 +459,7 @@ static void lispm_main(struct Page *program) {
   PC = program->begin + TAR_CONTENT_OFFSET;
 
   init_stack();
-  init_table();
+  init_table(BUILTINS, sizeof(BUILTINS) / sizeof(*BUILTINS));
   Sym res = eval(parse_object(lex()));
   DUMP(res);
 }
