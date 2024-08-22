@@ -11,7 +11,7 @@ extern jmp_buf main_try;
     if (!(cond)) __builtin_trap();                                             \
   } while (0)
 
-// #define ASSERT(cond) ((void)0)
+// #define ASSERT(cond) ((void)(cond))
 
 #define FIN(code) exit(code)
 

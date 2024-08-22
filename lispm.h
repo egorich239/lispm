@@ -3,10 +3,19 @@
 #include "rt.h"
 #include "sym.h"
 
+/* NOTE! These are access flags from the perspective of the Lisp program,
+         the underlying pages may be less restrictive, and indeed will be
+         for all interpreter's pages, potentially, except for the
+         PAGE_PROGRAM which is never accessed for writing by us. */
+#define PAGE_FLAG_RO 0u
+#define PAGE_FLAG_RW 1u
+#define PAGE_FLAG_RX 2u /* not executable! */
+
 /* Page must be aligned to CPU page size */
 struct Page {
   void *begin;
   void *end;
+  unsigned flags;
 };
 
 /* pages in page table */

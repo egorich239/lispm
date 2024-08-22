@@ -10,9 +10,12 @@
  * -   <CONS> 00 10: stack position of the pair car (CONS), cdr (CONS+1);
  * - <LAMBDA> 01 10: stack position of the triplet captures (LAMBDA), args (+1),
  *                   body (+2);
- * -    <PTR> 10 10: stack position of the pair page (PTR), offs (PTR+1);
+ * -    <PTR> 11 10: stack position of the triplet page (PTR), offs (PTR+1),
+ *                   length of memory range;
  *                   page is the page symbol (see below),
- *                   offs is byte offset off this page, encoded as numerical.
+ *                   offs is byte offset at this page, encoded as numerical;
+ *                   memory range either encodes the range as numerical,
+ *                   or contains SYM_NIL if it is undefined.
  *
  * The 11 trailing bits are reserved for special symbols;
  * all of them have upper bit zero, which is used by hash table to
@@ -22,6 +25,7 @@
  *                     when F bit is 1, it denotes a special form;
  *                     special forms receive their params unevaluated.
  * - 0   <OFFS> 01 11: page, offs specifies offset in page table;
+ *
  * - 0      ... 11 11: special values (assuming 32-bit unsigned)
  *          0000 000F: T
  *          7FFF FFDF: used during evaluation of capture lists of LET;
@@ -36,6 +40,7 @@ typedef unsigned Sym;
 #define UPPER_BITS(n) ~(~0u >> (n))
 
 /* atoms */
+static inline int is_nil(Sym s) { return !s; }
 static inline int is_atom(Sym s) { return (s & 2u) == 0; }
 
 /* literals */
@@ -71,7 +76,7 @@ static inline Sym unsigned_mul(Sym a, Sym b, int *oflow) {
 /* stack objects*/
 #define ST_OBJ_CONS    2u
 #define ST_OBJ_LAMBDA  6u
-#define ST_OBJ_POINTER 10u
+#define ST_OBJ_POINTER 14u
 static inline Sym make_st_obj(unsigned k, unsigned st_offs) {
   ASSERT(k == ST_OBJ_CONS || k == ST_OBJ_LAMBDA || k == ST_OBJ_POINTER);
   return (st_offs << 4) | k;

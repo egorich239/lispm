@@ -70,16 +70,20 @@ static void lambda_unpack(Sym a, Sym *captures, Sym *args, Sym *body) {
   Sym *l = STACK + st_obj_st_offs(a);
   *captures = l[0], *args = l[1], *body = l[2];
 }
-static Sym pointer(Sym page, Sym offs) {
-  ASSERT(is_page(page) && is_unsigned(offs));
+static Sym pointer(Sym page, Sym offs, Sym len) {
+  ASSERT(is_page(page) && is_unsigned(offs) &&
+         (is_nil(len) || is_unsigned(len)));
   Sym *p;
   Sym res = st_alloc(ST_OBJ_POINTER, &p);
-  return p[0] = page, p[1] = offs, res;
+  return p[0] = page, p[1] = offs, p[2] = len, res;
 }
-static inline void *pointer_get(Sym ptr) {
+static inline void pointer_unpack(Sym ptr, const struct Page **page, void **loc,
+                                  Sym *len) {
   ASSERT(is_pointer(ptr));
   unsigned s = st_obj_st_offs(ptr);
-  return PAGE_TABLE[page_pt_offs(STACK[s])].begin + STACK[s + 1];
+  *page = PAGE_TABLE + page_pt_offs(STACK[s]);
+  *loc = (*page)->begin + STACK[s + 1];
+  *len = STACK[s + 2];
 }
 static Sym gc0(Sym s, unsigned high_mark, unsigned depth) {
   if (!is_st_obj(s) || st_obj_st_offs(s) >= high_mark) return s;
@@ -226,7 +230,6 @@ static Sym parse_object(Sym tok) {
 
 /* eval */
 static Sym eval0(Sym e);
-static inline int is_nil(Sym e) { return e == SYM_NIL; }
 static inline int is_t(Sym e) { return e == SYM_T; }
 static inline int is_valid_result(Sym e) {
   return is_nil(e) || is_t(e) || is_atom(e) || is_cons(e);
@@ -277,7 +280,31 @@ static Sym evlet(Sym e) {
   }
   return eval0(b);
 }
-static inline Sym evstr(Sym e) {
+static Sym CONS(Sym a) {
+  Sym x, y;
+  cons_unpack_user(a, &x, &y);
+  return cons(x, evquote(y));
+}
+static Sym CAR(Sym a) {
+  Sym car, cdr;
+  cons_unpack_user(evquote(a), &car, &cdr);
+  return car;
+}
+static Sym CDR(Sym a) {
+  Sym car, cdr;
+  cons_unpack_user(evquote(a), &car, &cdr);
+  return cdr;
+}
+static Sym ATOM(Sym a) { return is_atom(evquote(a)) ? SYM_T : SYM_NIL; }
+static Sym EQ(Sym a) {
+  Sym x, y;
+  cons_unpack_user(a, &x, &y);
+  return x == evquote(y) && is_atom(x) ? SYM_T : SYM_NIL;
+}
+static Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
+  return eval0(evquote(e));
+}
+static Sym STR(Sym e) {
   EVAL_CHECK(!is_nil(e), ERR_EVAL, SYM_NIL);
   Sym c;
   unsigned stp = TP;
@@ -289,6 +316,7 @@ static inline Sym evstr(Sym e) {
       EVAL_CHECK(stp + l + 1 <= STRINGS_SIZE, ERR_OOM, c);
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wrestrict"
+      /* TODO: something is fishy here */
       __builtin_strcpy(STRINGS + stp, s);
 #pragma GCC diagnostic pop
       stp += l;
@@ -298,47 +326,50 @@ static inline Sym evstr(Sym e) {
     STRINGS[stp++] = unsigned_val(c);
     EVAL_CHECK(stp < STRINGS_SIZE, ERR_OOM, c);
   }
+  Sym len = make_unsigned(stp - TP);
   return pointer(
       PAGE_STRINGS,
       make_unsigned(literal_name(ensure(STRINGS + TP, STRINGS + stp)) -
-                    STRINGS));
+                    STRINGS),
+      len);
 }
-static inline Sym CONS(Sym a) {
-  Sym x, y;
-  cons_unpack_user(a, &x, &y);
-  return cons(x, evquote(y));
+static Sym GETC(Sym a) {
+  const struct Page *page;
+  void *l;
+  Sym ptr = evquote(a), len;
+  EVAL_CHECK(is_pointer(ptr), ERR_EVAL, ptr);
+  pointer_unpack(ptr, &page, &l, &len);
+  return make_unsigned(*(unsigned char *)l);
 }
-static inline Sym CAR(Sym a) {
-  Sym car, cdr;
-  cons_unpack_user(evquote(a), &car, &cdr);
-  return car;
-}
-static inline Sym CDR(Sym a) {
-  Sym car, cdr;
-  cons_unpack_user(evquote(a), &car, &cdr);
-  return cdr;
-}
-static inline Sym ATOM(Sym a) { return is_atom(evquote(a)) ? SYM_T : SYM_NIL; }
-static inline Sym EQ(Sym a) {
-  Sym x, y;
-  cons_unpack_user(a, &x, &y);
-  return x == evquote(y) && is_atom(x) ? SYM_T : SYM_NIL;
-}
-static inline Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
-  return eval0(evquote(e));
+static Sym WRITE(Sym a) {
+  Sym dest, src, dest_len, src_len;
+  const struct Page *dest_page, *src_page;
+  void *dest_loc, *src_loc;
+  cons_unpack_user(a, &dest, &src);
+  src = evquote(src);
+  EVAL_CHECK(is_pointer(dest) && is_pointer(src), ERR_EVAL, a);
+  pointer_unpack(dest, &dest_page, &dest_loc, &dest_len);
+  pointer_unpack(src, &src_page, &src_loc, &src_len);
+  EVAL_CHECK(dest_page->flags == PAGE_FLAG_RW, ERR_EVAL, a);
+  EVAL_CHECK(!is_nil(src_len), ERR_EVAL, src_len);
+  if (!is_nil(dest_len) && dest_len < src_len) src_len = dest_len;
+  __builtin_memcpy(dest_loc, src_loc, unsigned_val(src_len));
+  return src_len;
 }
 static const struct builtin_fn BUILTINS[] = {
     {evquote, "QUOTE", SPECIAL_FORM_BIT},
     {evcon, "COND", SPECIAL_FORM_BIT},
     {evlambda, "LAMBDA", SPECIAL_FORM_BIT},
     {evlet, "LET", SPECIAL_FORM_BIT},
-    {evstr, "STR", SPECIAL_FORM_BIT},
+    {STR, "STR", SPECIAL_FORM_BIT},
     {CONS, "CONS"},
     {CAR, "CAR"},
     {CDR, "CDR"},
     {ATOM, "ATOM"},
     {EQ, "EQ"},
-    {EVAL, "EVAL"}};
+    {EVAL, "EVAL"},
+    {GETC, "GETC"},
+    {WRITE, "WRITE"}};
 #define SYM_QUOTE  (MAKE_BUILTIN_FN(0) | SPECIAL_FORM_BIT)
 #define SYM_COND   (MAKE_BUILTIN_FN(1) | SPECIAL_FORM_BIT)
 #define SYM_LAMBDA (MAKE_BUILTIN_FN(2) | SPECIAL_FORM_BIT)
@@ -400,6 +431,8 @@ static Sym evcap0(Sym p, Sym c) {
   cons_unpack_user(p, &a, &t);
   if (is_literal(a)) {
     switch (get_assoc(a)) {
+    case SYM_STR:
+      return c;
     case SYM_QUOTE:
       return evquote(t), c;
     case SYM_COND:
@@ -462,8 +495,10 @@ static Sym eval0(Sym e) {
 /* API */
 static int lispm_main(struct Page *table, unsigned offs) {
   if (!(PAGE_TABLE = table)) return 1;
-  for (int i = 0; i < PAGE_TABLE_PRELUDE_SIZE; ++i)
+  for (int i = 0; i < PAGE_TABLE_PRELUDE_SIZE; ++i) {
     if (!PAGE_TABLE[i].begin) return 1;
+    PAGE_TABLE[i].flags = PAGE_FLAG_RO;
+  }
 
   PROGRAM_END = table[page_pt_offs(PAGE_PROGRAM)].end;
   PC = table[page_pt_offs(PAGE_PROGRAM)].begin + offs;
