@@ -69,7 +69,19 @@ static inline Sym unsigned_mul(Sym a, Sym b, int *oflow) {
 }
 
 /* stack objects*/
+#define ST_OBJ_CONS    2u
+#define ST_OBJ_LAMBDA  6u
+#define ST_OBJ_POINTER 10u
+static inline Sym make_st_obj(unsigned k, unsigned st_offs) {
+  ASSERT(k == ST_OBJ_CONS || k == ST_OBJ_LAMBDA || k == ST_OBJ_POINTER);
+  return (st_offs << 4) | k;
+}
 static inline int is_st_obj(Sym s) { return (s & 3u) == 2; }
+static inline unsigned st_obj_kind(Sym s) { return s & 15u; }
+static inline unsigned st_obj_st_size(Sym s) {
+  /* size of the object on the stack, in words */
+  return (s & 4) ? 3 : 2; /* ((s&4) >> 2) + 2 ?? */
+}
 static inline unsigned st_obj_st_offs(Sym s) {
   ASSERT(is_st_obj(s));
   return s >> 4;
@@ -81,30 +93,22 @@ static inline Sym st_obj_offset_by(Sym s, unsigned offs) {
 }
 
 /* cons */
-static inline Sym make_cons(unsigned st_offs) { return (st_offs << 4) | 2u; }
-static inline int is_cons(Sym s) { return (s & 15u) == 2u; }
-static inline unsigned cons_st_offs(Sym s) {
-  ASSERT(is_cons(s));
-  return st_obj_st_offs(s);
+static inline Sym make_cons(unsigned st_offs) {
+  return make_st_obj(ST_OBJ_CONS, st_offs);
 }
+static inline int is_cons(Sym s) { return st_obj_kind(s) == ST_OBJ_CONS; }
 
 /* lambda */
-static inline Sym make_lambda(unsigned st_offs) { return (st_offs << 4) | 6u; }
-static inline int is_lambda(Sym s) { return (s & 15u) == 6u; }
-static inline unsigned lambda_st_offs(Sym s) {
-  ASSERT(is_lambda(s));
-  return st_obj_st_offs(s);
+static inline Sym make_lambda(unsigned st_offs) {
+  return make_st_obj(ST_OBJ_LAMBDA, st_offs);
 }
+static inline int is_lambda(Sym s) { return st_obj_kind(s) == ST_OBJ_LAMBDA; }
 
 /* pointer */
 static inline Sym make_pointer(unsigned st_offs) {
-  return (st_offs << 4) | 10u;
+  return make_st_obj(ST_OBJ_POINTER, st_offs);
 }
-static inline int is_pointer(Sym s) { return (s & 15u) == 10u; }
-static inline unsigned pointer_st_offs(Sym s) {
-  ASSERT(is_pointer(s));
-  return st_obj_st_offs(s);
-}
+static inline int is_pointer(Sym s) { return st_obj_kind(s) == ST_OBJ_POINTER; }
 
 /* specials, ctors are defined in macros, to be compile time consts */
 #define SPECIAL_READONLY_BIT UPPER_BITS(1)

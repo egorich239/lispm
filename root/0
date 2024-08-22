@@ -141,10 +141,10 @@
         ))))
 
     )
-
     ((runState pcd) (QUOTE (1 2 3 4 5)))
-    
+
 )
+    (STR ALFA 32 BETA 35 GAMMA)
         (pce (whileS
             (doS (QUOTE (return (not (EQ 3 (CAR s)) s)))
             (LAMBDA (s) (pair () (CDR s)) )

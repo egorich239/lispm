@@ -44,46 +44,53 @@ __attribute__((noreturn)) static void report_error(Sym err, Sym ctx) {
 }
 
 /* stack functions */
-static Sym cons(Sym car, Sym cdr) {
-  SP -= 2;
+static Sym st_alloc(unsigned k, Sym **sp) {
+  SP -= st_obj_st_size(k);
   EVAL_CHECK(PP < SP, ERR_OOM, SYM_NIL);
-  STACK[SP + 0] = car;
-  STACK[SP + 1] = cdr;
-  return make_cons(SP);
+  *sp = STACK + SP;
+  return make_st_obj(k, SP);
+}
+static Sym cons(Sym car, Sym cdr) {
+  Sym *p;
+  Sym res = st_alloc(ST_OBJ_CONS, &p);
+  return p[0] = car, p[1] = cdr, res;
 }
 static inline void cons_unpack(Sym a, Sym *car, Sym *cdr) {
   ASSERT(is_cons(a));
-  *car = STACK[cons_st_offs(a) + 0];
-  *cdr = STACK[cons_st_offs(a) + 1];
+  *car = STACK[st_obj_st_offs(a) + 0];
+  *cdr = STACK[st_obj_st_offs(a) + 1];
 }
 static Sym lambda(Sym captures, Sym args, Sym body) {
-  SP -= 3;
-  EVAL_CHECK(PP < SP, ERR_OOM, SYM_NIL);
-  STACK[SP + 0] = captures;
-  STACK[SP + 1] = args;
-  STACK[SP + 2] = body;
-  return make_lambda(SP);
+  Sym *p;
+  Sym res = st_alloc(ST_OBJ_LAMBDA, &p);
+  return p[0] = captures, p[1] = args, p[2] = body, res;
 }
 static void lambda_unpack(Sym a, Sym *captures, Sym *args, Sym *body) {
   ASSERT(is_lambda(a));
-  Sym *l = STACK + lambda_st_offs(a);
+  Sym *l = STACK + st_obj_st_offs(a);
   *captures = l[0], *args = l[1], *body = l[2];
+}
+static Sym pointer(Sym page, Sym offs) {
+  ASSERT(is_page(page) && is_unsigned(offs));
+  Sym *p;
+  Sym res = st_alloc(ST_OBJ_POINTER, &p);
+  return p[0] = page, p[1] = offs, res;
+}
+static inline void *pointer_get(Sym ptr) {
+  ASSERT(is_pointer(ptr));
+  unsigned s = st_obj_st_offs(ptr);
+  return PAGE_TABLE[page_pt_offs(STACK[s])].begin + STACK[s + 1];
 }
 static Sym gc0(Sym s, unsigned high_mark, unsigned depth) {
   if (!is_st_obj(s) || st_obj_st_offs(s) >= high_mark) return s;
-  if (is_cons(s)) {
-    Sym car, cdr;
-    cons_unpack(s, &car, &cdr);
-    return st_obj_offset_by(
-        cons(gc0(car, high_mark, depth), gc0(cdr, high_mark, depth)), depth);
+  unsigned sz = st_obj_st_size(s);
+  Sym *t;
+  Sym res = st_obj_offset_by(st_alloc(st_obj_kind(s), &t), depth);
+  Sym *f = STACK + st_obj_st_offs(s) + sz;
+  for (Sym *m = t + sz; m != t;) {
+    *--m = gc0(*--f, high_mark, depth);
   }
-  ASSERT(is_lambda(s));
-  Sym captures, args, body;
-  lambda_unpack(s, &captures, &args, &body);
-  return st_obj_offset_by(lambda(gc0(captures, high_mark, depth),
-                                 gc0(args, high_mark, depth),
-                                 gc0(body, high_mark, depth)),
-                          depth);
+  return res;
 }
 static Sym gc(Sym root, unsigned high_mark) {
   unsigned low_mark = SP;
@@ -270,6 +277,32 @@ static Sym evlet(Sym e) {
   }
   return eval0(b);
 }
+static inline Sym evstr(Sym e) {
+  EVAL_CHECK(!is_nil(e), ERR_EVAL, SYM_NIL);
+  Sym c;
+  unsigned stp = TP;
+  while (!is_nil(e)) {
+    cons_unpack_user(e, &c, &e);
+    if (is_literal(c)) {
+      const char *s = literal_name(c);
+      int l = __builtin_strlen(s);
+      EVAL_CHECK(stp + l + 1 <= STRINGS_SIZE, ERR_OOM, c);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wrestrict"
+      __builtin_strcpy(STRINGS + stp, s);
+#pragma GCC diagnostic pop
+      stp += l;
+      continue;
+    }
+    EVAL_CHECK(is_unsigned(c) && unsigned_val(c) <= 255, ERR_EVAL, c);
+    STRINGS[stp++] = unsigned_val(c);
+    EVAL_CHECK(stp < STRINGS_SIZE, ERR_OOM, c);
+  }
+  return pointer(
+      PAGE_STRINGS,
+      make_unsigned(literal_name(ensure(STRINGS + TP, STRINGS + stp)) -
+                    STRINGS));
+}
 static inline Sym CONS(Sym a) {
   Sym x, y;
   cons_unpack_user(a, &x, &y);
@@ -299,6 +332,7 @@ static const struct builtin_fn BUILTINS[] = {
     {evcon, "COND", SPECIAL_FORM_BIT},
     {evlambda, "LAMBDA", SPECIAL_FORM_BIT},
     {evlet, "LET", SPECIAL_FORM_BIT},
+    {evstr, "STR", SPECIAL_FORM_BIT},
     {CONS, "CONS"},
     {CAR, "CAR"},
     {CDR, "CDR"},
@@ -309,6 +343,7 @@ static const struct builtin_fn BUILTINS[] = {
 #define SYM_COND   (MAKE_BUILTIN_FN(1) | SPECIAL_FORM_BIT)
 #define SYM_LAMBDA (MAKE_BUILTIN_FN(2) | SPECIAL_FORM_BIT)
 #define SYM_LET    (MAKE_BUILTIN_FN(3) | SPECIAL_FORM_BIT)
+#define SYM_STR    (MAKE_BUILTIN_FN(4) | SPECIAL_FORM_BIT)
 
 static Sym evcap0(Sym p, Sym c);
 static Sym evcap_remove_bindings(Sym c, Sym c0) {

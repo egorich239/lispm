@@ -32,8 +32,8 @@ void lispm_dump(const struct Page *table, Sym sym) {
     indent += 2;
     same_line = 1;
     while (is_cons(sym)) {
-      Sym car = stack[cons_st_offs(sym)];
-      sym = stack[cons_st_offs(sym) + 1];
+      Sym car = stack[st_obj_st_offs(sym)];
+      sym = stack[st_obj_st_offs(sym) + 1];
       lispm_dump(table, car);
     }
     if (sym != SYM_NIL) lispm_dump(table, sym);
@@ -43,7 +43,7 @@ void lispm_dump(const struct Page *table, Sym sym) {
       fprintf(stderr, " ");
     fprintf(stderr, sym != SYM_NIL ? "!)\n" : ")\n");
   } else if (is_lambda(sym)) {
-    unsigned offs = lambda_st_offs(sym);
+    unsigned offs = st_obj_st_offs(sym);
     Sym cap = stack[offs], par = stack[offs + 1], body = stack[offs + 2];
     fprintf(stderr, "(LAMBDA\n");
     indent += 2;
