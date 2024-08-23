@@ -1,6 +1,28 @@
 #include "lispm.h"
 #include "sym.h"
 
+static Sym CONS(Sym a) {
+  Sym x, y;
+  lispm_args_unpack2(a, &x, &y);
+  return lispm_alloc_cons(x, y);
+}
+static Sym CAR(Sym a) {
+  Sym car, cdr;
+  lispm_cons_unpack_user(lispm_evquote(a), &car, &cdr);
+  return car;
+}
+static Sym CDR(Sym a) {
+  Sym car, cdr;
+  lispm_cons_unpack_user(lispm_evquote(a), &car, &cdr);
+  return cdr;
+}
+static Sym ATOM(Sym a) { return is_atom(lispm_evquote(a)) ? SYM_T : SYM_NIL; }
+static Sym EQ(Sym a) {
+  Sym x, y;
+  lispm_args_unpack2(a, &x, &y);
+  return is_atom(x) && x == y ? SYM_T : SYM_NIL;
+}
+
 static Sym PROGRAM(Sym e) {
   EVAL_CHECK(is_nil(e), ERR_EVAL);
   return lispm_alloc_pointer(PAGE_PROGRAM, make_unsigned(0),
@@ -71,7 +93,18 @@ static Sym SPAN(Sym a) {
   return lispm_alloc_pointer(pg, unsigned_add(os, b, &o), l);
 }
 
-static struct Builtin LRT0[] = {
-    {"PROGRAM", PROGRAM}, {"GETC", GETC}, {"COPY", COPY}, {"ADD", ADD},
-    {"MUL", MUL},         {"SUB", SUB},   {"SPAN", SPAN},
+struct Builtin LRT0[] = {
+    {"CONS", CONS},
+    {"CAR", CAR},
+    {"CDR", CDR},
+    {"ATOM", ATOM},
+    {"EQ", EQ},
+    {"PROGRAM", PROGRAM},
+    {"GETC", GETC},
+    {"COPY", COPY},
+    {"ADD", ADD},
+    {"MUL", MUL},
+    {"SUB", SUB},
+    {"SPAN", SPAN},
+    {},
 };

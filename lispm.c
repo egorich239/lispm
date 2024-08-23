@@ -328,27 +328,6 @@ static Sym lispm_evlet(Sym e) {
   }
   return eval0(b);
 }
-static Sym CONS(Sym a) {
-  Sym x, y;
-  lispm_args_unpack2(a, &x, &y);
-  return lispm_alloc_cons(x, y);
-}
-static Sym CAR(Sym a) {
-  Sym car, cdr;
-  lispm_cons_unpack_user(lispm_evquote(a), &car, &cdr);
-  return car;
-}
-static Sym CDR(Sym a) {
-  Sym car, cdr;
-  lispm_cons_unpack_user(lispm_evquote(a), &car, &cdr);
-  return cdr;
-}
-static Sym ATOM(Sym a) { return is_atom(lispm_evquote(a)) ? SYM_T : SYM_NIL; }
-static Sym EQ(Sym a) {
-  Sym x, y;
-  lispm_args_unpack2(a, &x, &y);
-  return is_atom(x) && x == y ? SYM_T : SYM_NIL;
-}
 static Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
   return eval0(lispm_evquote(e));
 }
@@ -381,19 +360,17 @@ static Sym STR(Sym e) {
                     STRINGS),
       len);
 }
-static const struct Builtin BUILTINS[] = {
+
+static struct Builtin BUILTINS[BUILTINS_TABLE_SIZE] = {
     {"QUOTE", lispm_evquote, lispm_evcap_quote},
     {"COND", lispm_evcon, lispm_evcap_con},
     {"LAMBDA", lispm_evlambda, lispm_evcap_lambda},
     {"LET", lispm_evlet, lispm_evcap_let},
     {"STR", STR, lispm_evcap_quote},
-    {"CONS", CONS},
-    {"CAR", CAR},
-    {"CDR", CDR},
-    {"ATOM", ATOM},
-    {"EQ", EQ},
     {"EVAL", EVAL},
 };
+#define BUILTINS_CORE_SIZE 6
+static unsigned BUILTINS_SIZE;
 
 static Sym evcap0(Sym p, Sym c) {
   if (is_unsigned(p)) return c; /* unsigned: no need to capture */
@@ -446,7 +423,7 @@ static Sym evapply(Sym e) {
   if (!is_special_form(f)) eval_args = 1;
   if (eval_args) a = evlis(a);
 
-  if (is_builtin_fn(f)) return BUILTINS[builtin_fn_ft_offs(f)].fn(a);
+  if (is_builtin_fn(f)) return BUILTINS[builtin_fn_ft_offs(f)].eval(a);
   EVAL_CHECK(is_lambda(f), ERR_EVAL);
   Sym c, p, b, as, n, v;
   lambda_unpack(f, &c, &p, &b);
@@ -474,7 +451,8 @@ static Sym eval0(Sym e) {
 }
 
 /* API */
-static int lispm_main(struct PageDesc *table, unsigned offs) {
+static int lispm_main(struct PageDesc *table, unsigned offs,
+                      const struct Builtin *rt) {
   if (!(PAGE_TABLE = table)) return 1;
   for (int i = 0; i < PAGE_TABLE_PRELUDE_SIZE; ++i) {
     if (!PAGE_TABLE[i].begin) return 1;
@@ -499,7 +477,13 @@ static int lispm_main(struct PageDesc *table, unsigned offs) {
 
   TP = 4; /* no symbol starts at offset 0 of the table string */
   insert_cstr("T", SYM_T | SPECIAL_READONLY_BIT);
-  for (int i = 0; i < sizeof(BUILTINS) / sizeof(*BUILTINS); ++i) {
+
+  BUILTINS_SIZE = BUILTINS_CORE_SIZE;
+  while (rt && rt->name) {
+    if (BUILTINS_SIZE == BUILTINS_TABLE_SIZE) return 1;
+    BUILTINS[BUILTINS_SIZE++] = *rt++;
+  }
+  for (int i = 0; i < BUILTINS_SIZE; ++i) {
     insert_cstr(BUILTINS[i].name,
                 MAKE_BUILTIN_FN(i) | SPECIAL_READONLY_BIT |
                     (BUILTINS[i].evcap ? SPECIAL_FORM_BIT : 0));
@@ -509,9 +493,10 @@ static int lispm_main(struct PageDesc *table, unsigned offs) {
   return 0;
 }
 
-Sym lispm_exec(struct PageDesc *table, unsigned offs) {
+Sym lispm_exec(struct PageDesc *table, unsigned offs,
+               const struct Builtin *rt) {
   int failed_init = 0;
-  TRY(failed_init = lispm_main(table, offs));
+  TRY(failed_init = lispm_main(table, offs, rt));
   return failed_init           ? ERR_INIT  /* init error */
          : STACK[0] != SYM_NIL ? STACK[0]  /* lex/parse/eval error */
                                : STACK[1]; /* regular result */

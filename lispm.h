@@ -26,28 +26,36 @@ struct PageDesc {
 #define PAGE_STRINGS            MAKE_PAGE(4) /* hash table strings */
 #define PAGE_TABLE_PRELUDE_SIZE 5
 
+/*
+   Arguments are provided as a SYM_NIL-terminated CONS-sequence.
+
+   If evcap is non-zero, the builtin is treated as special form,
+   i.e. it receives its args unevaluated.
+   This callback is used to evaluate the list of args captured
+   by this special form.
+ */
+struct Builtin {
+  const char *name;
+  Sym (*eval)(Sym args);
+  Sym (*evcap)(Sym args, Sym caps);
+};
+#define BUILTINS_TABLE_SIZE 128u
+
 /* Strings index hashing is rather naive,
    and attempts to look at the next several slots.
    This value limits how many slots are looked up before we give up. */
 #define STRINGS_INDEX_LOOKUP_LIMIT 32u
 
 /* API */
-Sym lispm_exec(struct PageDesc *page_table, unsigned offs);
+Sym lispm_exec(struct PageDesc *page_table, unsigned offs,
+               const struct Builtin *rt);
 
 /* Integration */
-
 /* Unlike ASSERT, these errors are caused by a bug in the user code. */
 #define EVAL_CHECK(cond, err)                                                  \
   do {                                                                         \
     if (!(cond)) lispm_report_error(err);                                      \
   } while (0)
-
-/* builtins: functions and special forms */
-struct Builtin {
-  const char *name;
-  Sym (*fn)(Sym args);
-  Sym (*evcap)(Sym args, Sym caps);
-};
 
 __attribute__((noreturn)) void lispm_report_error(Sym err);
 

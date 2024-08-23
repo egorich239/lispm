@@ -11,6 +11,8 @@
 
 #define TAR_CONTENT_OFFSET 512
 
+extern struct Builtin LRT0[];
+
 int main(int argc, char *argv[]) {
   if (argc < 2) return 1;
 
@@ -25,6 +27,6 @@ int main(int argc, char *argv[]) {
   program.begin = page_begin;
   program.end = program.begin + stat.st_size;
   struct PageDesc *table = lispm_alloc_pages(&program);
-  Sym result = lispm_exec(table, TAR_CONTENT_OFFSET);
+  Sym result = lispm_exec(table, TAR_CONTENT_OFFSET, LRT0);
   lispm_dump(table, result);
 }
