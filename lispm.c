@@ -117,7 +117,7 @@ static inline Sym set_assoc(Sym s, Sym assoc) {
   const Sym old_assoc = *a;
   return *a = assoc, old_assoc;
 }
-static inline const char *literal_name(Sym s) {
+static inline const char *string_get_begin(Sym s) {
   ASSERT(is_literal(s));
   return STRINGS + INDEX[literal_ht_offs(s)];
 }
@@ -146,11 +146,8 @@ static Sym ensure(const char *b, const char *e) {
   TP += 3u, TP &= ~3u;
   return make_literal(2 * offset);
 }
-static Sym insert_cstr(const char *lit, Sym assoc) {
-  const char *e = lit;
-  while (*e)
-    ++e;
-  const Sym res = ensure(lit, e);
+static inline Sym insert_cstr(const char *lit, Sym assoc) {
+  const Sym res = ensure(lit, lit + __builtin_strlen(lit));
   return set_assoc(res, assoc), res;
 }
 
@@ -337,28 +334,23 @@ static Sym STR(Sym e) {
   unsigned stp = TP;
   while (!is_nil(e)) {
     lispm_cons_unpack_user(e, &c, &e);
-    if (is_literal(c)) {
-      const char *s = literal_name(c);
-      int l = __builtin_strlen(s);
-      EVAL_CHECK(stp + l + 1 <= STRINGS_SIZE, ERR_OOM);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wrestrict"
-      /* TODO: something is fishy here */
-      __builtin_strcpy(STRINGS + stp, s);
-#pragma GCC diagnostic pop
-      stp += l;
+    if (is_unsigned(c)) {
+      EVAL_CHECK(unsigned_val(c) <= 255, ERR_EVAL);
+      STRINGS[stp++] = unsigned_val(c);
+      EVAL_CHECK(stp < STRINGS_SIZE, ERR_OOM);
       continue;
     }
-    EVAL_CHECK(is_unsigned(c) && unsigned_val(c) <= 255, ERR_EVAL);
-    STRINGS[stp++] = unsigned_val(c);
-    EVAL_CHECK(stp < STRINGS_SIZE, ERR_OOM);
+
+    EVAL_CHECK(is_literal(c), ERR_EVAL);
+    const char *s = string_get_begin(c);
+    while (*s) {
+      STRINGS[stp++] = *s++;
+      EVAL_CHECK(stp < STRINGS_SIZE, ERR_OOM);
+    }
   }
   Sym len = make_unsigned(stp - TP);
-  return lispm_alloc_pointer(
-      PAGE_STRINGS,
-      make_unsigned(literal_name(ensure(STRINGS + TP, STRINGS + stp)) -
-                    STRINGS),
-      len);
+  const char *s = string_get_begin(ensure(STRINGS + TP, STRINGS + stp));
+  return lispm_alloc_pointer(PAGE_STRINGS, make_unsigned(s - STRINGS), len);
 }
 
 static struct Builtin BUILTINS[BUILTINS_TABLE_SIZE] = {
