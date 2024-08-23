@@ -1,3 +1,5 @@
+(CHARS (STR HELLO 32 WORLD))
+
 (LET 
     (
         (compose (LAMBDA (f g) (LAMBDA (x) (f (g x)))))

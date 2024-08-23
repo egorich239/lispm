@@ -63,6 +63,8 @@ struct PageDesc *lispm_page_desc(Sym pg);
 void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size);
 unsigned lispm_page_size(Sym pg, int elt_size_log2);
 
+const char *lispm_literal_name(Sym s);
+
 Sym lispm_alloc_cons(Sym car, Sym cdr);
 void lispm_cons_unpack(Sym a, Sym *car, Sym *cdr);
 void lispm_cons_unpack_user(Sym a, Sym *car, Sym *cdr);

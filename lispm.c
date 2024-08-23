@@ -117,7 +117,7 @@ static inline Sym set_assoc(Sym s, Sym assoc) {
   const Sym old_assoc = *a;
   return *a = assoc, old_assoc;
 }
-static inline const char *string_get_begin(Sym s) {
+const char *lispm_literal_name(Sym s) {
   ASSERT(is_literal(s));
   return STRINGS + INDEX[literal_ht_offs(s)];
 }
@@ -342,14 +342,14 @@ static Sym STR(Sym e) {
     }
 
     EVAL_CHECK(is_literal(c), ERR_EVAL);
-    const char *s = string_get_begin(c);
+    const char *s = lispm_literal_name(c);
     while (*s) {
       STRINGS[stp++] = *s++;
       EVAL_CHECK(stp < STRINGS_SIZE, ERR_OOM);
     }
   }
   Sym len = make_unsigned(stp - TP);
-  const char *s = string_get_begin(ensure(STRINGS + TP, STRINGS + stp));
+  const char *s = lispm_literal_name(ensure(STRINGS + TP, STRINGS + stp));
   return lispm_alloc_pointer(PAGE_STRINGS, make_unsigned(s - STRINGS), len);
 }
 
