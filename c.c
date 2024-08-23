@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "lispm.h"
 #include "support.h"
+#include "sym.h"
 
 #define TAR_CONTENT_OFFSET 512
 
@@ -28,5 +29,7 @@ int main(int argc, char *argv[]) {
   program.end = program.begin + stat.st_size;
   struct PageDesc *table = lispm_alloc_pages(&program);
   Sym result = lispm_exec(table, TAR_CONTENT_OFFSET, LRT0);
+  fprintf(stderr, "%s\n",
+          (const char *)table[page_pt_offs(PAGE_STRINGS)].begin);
   lispm_dump(table, result);
 }

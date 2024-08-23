@@ -48,20 +48,18 @@ static Sym COPY(Sym a) {
                    unsigned_val(dest_len));
   return dest_len;
 }
+static Sym STR(Sym e) {
+  e = lispm_evquote(e);
+  EVAL_CHECK(is_literal(e), ERR_EVAL);
+  return lispm_literal_name_pointer(e);
+}
 static Sym CHARS(Sym a) {
   a = lispm_evquote(a);
-  const unsigned char *p;
-  unsigned l;
-  if (is_literal(a)) {
-    p = (const unsigned char *)lispm_literal_name(a);
-    l = __builtin_strlen(p);
-  } else {
-    Sym pg, offs, len;
-    EVAL_CHECK(is_pointer(a), ERR_EVAL);
-    lispm_pointer_unpack(a, &pg, &offs, &len);
-    p = lispm_page_loc(pg, unsigned_val(offs), 1);
-    l = unsigned_val(len);
-  }
+  Sym pg, offs, len;
+  EVAL_CHECK(is_pointer(a), ERR_EVAL);
+  lispm_pointer_unpack(a, &pg, &offs, &len);
+  const unsigned char *p = lispm_page_loc(pg, unsigned_val(offs), 1);
+  unsigned l = unsigned_val(len);
   p += l;
   Sym res = SYM_NIL;
   while (l--)
@@ -114,11 +112,19 @@ static Sym SPAN(Sym a) {
 }
 
 struct Builtin LRT0[] = {
-    {"CONS", CONS}, {"CAR", CAR},
-    {"CDR", CDR},   {"ATOM", ATOM},
-    {"EQ", EQ},     {"PROGRAM", PROGRAM},
-    {"GETC", GETC}, {"CHARS", CHARS},
-    {"COPY", COPY}, {"ADD", ADD},
-    {"MUL", MUL},   {"SUB", SUB},
-    {"SPAN", SPAN}, {},
+    {"CONS", CONS},
+    {"CAR", CAR},
+    {"CDR", CDR},
+    {"ATOM", ATOM},
+    {"EQ", EQ},
+    {"PROGRAM", PROGRAM},
+    {"STR", STR, lispm_evcap_quote},
+    {"CHARS", CHARS},
+    {"GETC", GETC},
+    {"COPY", COPY},
+    {"ADD", ADD},
+    {"MUL", MUL},
+    {"SUB", SUB},
+    {"SPAN", SPAN},
+    {},
 };

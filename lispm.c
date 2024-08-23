@@ -28,6 +28,11 @@ __attribute__((noreturn)) void lispm_report_error(Sym err) {
   STACK[0] = err;
   THROW(1);
 }
+void lispm_error_diag(const char *msg) {
+  int i = 0;
+  while (i < STRINGS_START_OFFSET && (STRINGS[i++] = *msg++))
+    ;
+}
 
 /* stack functions */
 static Sym st_alloc(unsigned k, Sym **sp) {
@@ -117,9 +122,12 @@ static inline Sym set_assoc(Sym s, Sym assoc) {
   const Sym old_assoc = *a;
   return *a = assoc, old_assoc;
 }
-const char *lispm_literal_name(Sym s) {
+Sym lispm_literal_name_pointer(Sym s) {
   ASSERT(is_literal(s));
-  return STRINGS + INDEX[literal_ht_offs(s)];
+  unsigned offs = INDEX[literal_ht_offs(s)];
+  unsigned len = __builtin_strlen(STRINGS + offs);
+  return lispm_alloc_pointer(PAGE_STRINGS, make_unsigned(offs),
+                             make_unsigned(len));
 }
 
 static Sym insert_cstr(const char *lit, Sym assoc);
@@ -328,40 +336,14 @@ static Sym lispm_evlet(Sym e) {
 static Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
   return eval0(lispm_evquote(e));
 }
-static Sym STR(Sym e) {
-  EVAL_CHECK(!is_nil(e), ERR_EVAL);
-  Sym c;
-  unsigned stp = TP;
-  while (!is_nil(e)) {
-    lispm_cons_unpack_user(e, &c, &e);
-    if (is_unsigned(c)) {
-      EVAL_CHECK(unsigned_val(c) <= 255, ERR_EVAL);
-      STRINGS[stp++] = unsigned_val(c);
-      EVAL_CHECK(stp < STRINGS_SIZE, ERR_OOM);
-      continue;
-    }
-
-    EVAL_CHECK(is_literal(c), ERR_EVAL);
-    const char *s = lispm_literal_name(c);
-    while (*s) {
-      STRINGS[stp++] = *s++;
-      EVAL_CHECK(stp < STRINGS_SIZE, ERR_OOM);
-    }
-  }
-  Sym len = make_unsigned(stp - TP);
-  const char *s = lispm_literal_name(ensure(STRINGS + TP, STRINGS + stp));
-  return lispm_alloc_pointer(PAGE_STRINGS, make_unsigned(s - STRINGS), len);
-}
-
 static struct Builtin BUILTINS[BUILTINS_TABLE_SIZE] = {
     {"QUOTE", lispm_evquote, lispm_evcap_quote},
     {"COND", lispm_evcon, lispm_evcap_con},
     {"LAMBDA", lispm_evlambda, lispm_evcap_lambda},
     {"LET", lispm_evlet, lispm_evcap_let},
-    {"STR", STR, lispm_evcap_quote},
     {"EVAL", EVAL},
+    {},
 };
-#define BUILTINS_CORE_SIZE 6
 static unsigned BUILTINS_SIZE;
 
 static Sym evcap0(Sym p, Sym c) {
@@ -467,10 +449,11 @@ static int lispm_main(struct PageDesc *table, unsigned offs,
       (((unsigned *)PAGE_TABLE[page_pt_offs(PAGE_INDEX)].end) - INDEX) / 2;
   if (INDEX_SIZE & (INDEX_SIZE - 1)) return 1;
 
-  TP = 4; /* no symbol starts at offset 0 of the table string */
+  TP = STRINGS_START_OFFSET;
   insert_cstr("T", SYM_T | SPECIAL_READONLY_BIT);
 
-  BUILTINS_SIZE = BUILTINS_CORE_SIZE;
+  while (BUILTINS[BUILTINS_SIZE].name)
+    ++BUILTINS_SIZE;
   while (rt && rt->name) {
     if (BUILTINS_SIZE == BUILTINS_TABLE_SIZE) return 1;
     BUILTINS[BUILTINS_SIZE++] = *rt++;

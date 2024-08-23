@@ -17,7 +17,7 @@ clean:;	$(RM) $(CLEANFILES)
 
 $(OBJS): %.o: %.c
 
-c: c.o rt.o lispm.o debug.o support.o lrt0.c
+c: c.o rt.o lispm.o debug.o support.o lrt0.o
 
 .PHONY: root.tar
 root.tar:

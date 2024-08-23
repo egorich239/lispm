@@ -3,6 +3,8 @@
 #include "rt.h"
 #include "sym.h"
 
+#define VERBOSE_FAILURES 0
+
 /* NOTE! These are access flags from the perspective of the Lisp program,
          the underlying pages may be less restrictive, and indeed will be
          for all interpreter's pages, potentially, except for the
@@ -41,6 +43,13 @@ struct Builtin {
 };
 #define BUILTINS_TABLE_SIZE 128u
 
+/* The initial part of the table can be used for user-provided error message, or
+ * message in verbose mode
+ */
+#define STRINGS_START_OFFSET 256u
+_Static_assert(STRINGS_START_OFFSET > 0,
+               "no symbol shall share the address on SYM_NIL");
+
 /* Strings index hashing is rather naive,
    and attempts to look at the next several slots.
    This value limits how many slots are looked up before we give up. */
@@ -52,18 +61,28 @@ Sym lispm_exec(struct PageDesc *page_table, unsigned offs,
 
 /* Integration */
 /* Unlike ASSERT, these errors are caused by a bug in the user code. */
+#if !VERBOSE_FAILURES
 #define EVAL_CHECK(cond, err)                                                  \
   do {                                                                         \
     if (!(cond)) lispm_report_error(err);                                      \
   } while (0)
-
+#else
+#define EVAL_CHECK(cond, err)                                                  \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      lispm_error_diag("Failed assertion: " #cond);                            \
+      lispm_report_error(err);                                                 \
+    }                                                                          \
+  } while (0)
+#endif
 __attribute__((noreturn)) void lispm_report_error(Sym err);
+void lispm_error_diag(const char* msg);
 
 struct PageDesc *lispm_page_desc(Sym pg);
 void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size);
 unsigned lispm_page_size(Sym pg, int elt_size_log2);
 
-const char *lispm_literal_name(Sym s);
+Sym lispm_literal_name_pointer(Sym s);
 
 Sym lispm_alloc_cons(Sym car, Sym cdr);
 void lispm_cons_unpack(Sym a, Sym *car, Sym *cdr);
@@ -72,5 +91,6 @@ void lispm_cons_unpack_user(Sym a, Sym *car, Sym *cdr);
 Sym lispm_alloc_pointer(Sym page, Sym offs, Sym len);
 void lispm_pointer_unpack(Sym ptr, Sym *page, Sym *offs, Sym *len);
 
+Sym lispm_evcap_quote(Sym a, Sym c);
 Sym lispm_evquote(Sym a);
 void lispm_args_unpack2(Sym a, Sym *f, Sym *s);
