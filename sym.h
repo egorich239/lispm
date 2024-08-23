@@ -72,7 +72,7 @@ static inline Sym unsigned_sub(Sym a, Sym b, int *oflow) {
 }
 static inline Sym unsigned_mul(Sym a, Sym b, int *oflow) {
   Sym res;
-  *oflow = __builtin_uadd_overflow(unsigned_val(a), unsigned_val(b), &res) |
+  *oflow = __builtin_umul_overflow(unsigned_val(a), unsigned_val(b), &res) |
            (res & UPPER_BITS(2));
   return make_unsigned(res);
 }

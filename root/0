@@ -1,8 +1,5 @@
-(CHARS (STR HELLO WORLD))
-
 (LET 
     (
-        (compose (LAMBDA (f g) (LAMBDA (x) (f (g x)))))
         (nil (QUOTE ()))
         (true (QUOTE T))
         
@@ -17,9 +14,10 @@
             ((EQ nil x) (and y true))
             (true true))))
 
+        (compose (LAMBDA (f g) (LAMBDA (x) (f (g x)))))
+
         (cadr (LAMBDA (seq) (CAR (CDR seq))))
         (cddr (LAMBDA (seq) (CDR (CDR seq))))
-
 
         (pair CONS)
         (pair~ (LAMBDA (x y) (pair y x)))
@@ -141,11 +139,16 @@
             ((pfx 239))
             (returnS l)
         ))))
+
+        (parse-unsigned8 (LAMBDA (seq) (foldl (LAMBDA (acc d) (ADD (MUL 8 acc) (SUB d 48))) 0 seq)))
+
     )
 
-    ((runState pcd) (QUOTE (1 2 3 4 5)))
+    (parse-unsigned8 (QUOTE ( 50 49 48 )))
+
 
 )
+    ((runState pcd) (QUOTE (1 2 3 4 5)))
 
     (E (QUOTE (CONS 1 2)))
     (STR ALFA 32 BETA 35 GAMMA)

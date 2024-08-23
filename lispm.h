@@ -3,7 +3,7 @@
 #include "rt.h"
 #include "sym.h"
 
-#define VERBOSE_FAILURES 0
+#define VERBOSE_FAILURES 1
 
 /* NOTE! These are access flags from the perspective of the Lisp program,
          the underlying pages may be less restrictive, and indeed will be

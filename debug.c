@@ -22,7 +22,7 @@ void lispm_dump(const struct PageDesc *table, Sym sym) {
   } else if (sym == SYM_T) {
     fprintf(stderr, "T\n");
   } else if (is_unsigned(sym)) {
-    fprintf(stderr, "%u\n", sym >> 2);
+    fprintf(stderr, "%u\n", unsigned_val(sym));
   } else if (is_literal(sym)) {
     fprintf(stderr, "%s\n", strings + (index[literal_ht_offs(sym)]));
   } else if (is_special(sym)) {
