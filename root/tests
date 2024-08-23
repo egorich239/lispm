@@ -1,3 +1,6 @@
+(LET ((AB (QUOTE T))) ((QUOTE QUOTE) AB)) ===> T
+(LET ((AB (QUOTE T))) (QUOTE AB)) ===> AB
+
 (LET
     (
         (y (QUOTE C))

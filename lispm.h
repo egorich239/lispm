@@ -12,7 +12,7 @@
 #define PAGE_FLAG_RX 2u /* not executable! */
 
 /* Page must be aligned to CPU page size */
-struct Page {
+struct PageDesc {
   void *begin;
   void *end;
   unsigned flags;
@@ -31,4 +31,36 @@ struct Page {
    This value limits how many slots are looked up before we give up. */
 #define STRINGS_INDEX_LOOKUP_LIMIT 32u
 
-Sym lispm_exec(struct Page *page_table, unsigned offs);
+/* API */
+Sym lispm_exec(struct PageDesc *page_table, unsigned offs);
+
+/* Integration */
+
+/* Unlike ASSERT, these errors are caused by a bug in the user code. */
+#define EVAL_CHECK(cond, err)                                                  \
+  do {                                                                         \
+    if (!(cond)) lispm_report_error(err);                                      \
+  } while (0)
+
+/* builtins: functions and special forms */
+struct Builtin {
+  const char *name;
+  Sym (*fn)(Sym args);
+  Sym (*evcap)(Sym args, Sym caps);
+};
+
+__attribute__((noreturn)) void lispm_report_error(Sym err);
+
+struct PageDesc *lispm_page_desc(Sym pg);
+void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size);
+unsigned lispm_page_size(Sym pg, int elt_size_log2);
+
+Sym lispm_alloc_cons(Sym car, Sym cdr);
+void lispm_cons_unpack(Sym a, Sym *car, Sym *cdr);
+void lispm_cons_unpack_user(Sym a, Sym *car, Sym *cdr);
+
+Sym lispm_alloc_pointer(Sym page, Sym offs, Sym len);
+void lispm_pointer_unpack(Sym ptr, Sym *page, Sym *offs, Sym *len);
+
+Sym lispm_evquote(Sym a);
+void lispm_args_unpack2(Sym a, Sym *f, Sym *s);

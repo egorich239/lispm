@@ -21,10 +21,10 @@ int main(int argc, char *argv[]) {
   void *page_begin = mmap(NULL, stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (!page_begin) return 1;
 
-  struct Page program;
+  struct PageDesc program;
   program.begin = page_begin;
   program.end = program.begin + stat.st_size;
-  struct Page *table = lispm_alloc_pages(&program);
+  struct PageDesc *table = lispm_alloc_pages(&program);
   Sym result = lispm_exec(table, TAR_CONTENT_OFFSET);
   lispm_dump(table, result);
 }

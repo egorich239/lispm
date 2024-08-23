@@ -14,8 +14,7 @@
  *                   length of memory range;
  *                   page is the page symbol (see below),
  *                   offs is byte offset at this page, encoded as numerical;
- *                   memory range either encodes the range as numerical,
- *                   or contains SYM_NIL if it is undefined.
+ *                   memory range encodes the range as numerical.
  *
  * The 11 trailing bits are reserved for special symbols;
  * all of them have upper bit zero, which is used by hash table to
@@ -65,6 +64,11 @@ static inline Sym unsigned_add(Sym a, Sym b, int *oflow) {
   Sym res;
   *oflow = __builtin_uadd_overflow(a, b, &res);
   return res ^ 3u;
+}
+static inline Sym unsigned_sub(Sym a, Sym b, int *oflow) {
+  Sym res;
+  *oflow = __builtin_usub_overflow(a, b, &res);
+  return res | 1u;
 }
 static inline Sym unsigned_mul(Sym a, Sym b, int *oflow) {
   Sym res;
@@ -146,6 +150,7 @@ static inline unsigned page_pt_offs(Sym s) { return s >> 4; }
 
 #define SYM_NIL      0u
 #define SYM_T        MAKE_SPECIAL_VALUE(0)
+#define SYM_PROGRAM  MAKE_SPECIAL_VALUE(1)
 #define SYM_BINDING  MAKE_SPECIAL_VALUE(~0u - 2)
 #define SYM_CAPTURED MAKE_SPECIAL_VALUE(~0u - 1)
 #define SYM_NO_ASSOC MAKE_SPECIAL_VALUE(~0u - 0)

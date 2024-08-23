@@ -8,5 +8,5 @@
 #define PAGE_INDEX_SIZE      1048576u
 #define PAGE_STRINGS_SIZE    1048576u
 
-struct Page *lispm_alloc_pages(const struct Page *program);
-void lispm_release_pages(const struct Page* page0);
+struct PageDesc *lispm_alloc_pages(const struct PageDesc *program);
+void lispm_release_pages(const struct PageDesc* page0);

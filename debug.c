@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-void lispm_dump(const struct Page *table, Sym sym) {
+void lispm_dump(const struct PageDesc *table, Sym sym) {
   static int indent = 0;
   static int same_line = 0;
 

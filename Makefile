@@ -1,4 +1,4 @@
-CFLAGS = -Wall -Werror -Oz -fomit-frame-pointer -g -mtune=generic
+CFLAGS = -Wall -Werror -O0 -fomit-frame-pointer -g -mtune=generic
 
 SRCS = $(wildcard *.c)
 OBJS = $(SRCS:%.c=%.o)
@@ -17,7 +17,7 @@ clean:;	$(RM) $(CLEANFILES)
 
 $(OBJS): %.o: %.c
 
-c: c.o rt.o lispm.o debug.o support.o
+c: c.o rt.o lispm.o debug.o support.o lrt0.c
 
 .PHONY: root.tar
 root.tar:
