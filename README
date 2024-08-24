@@ -1,0 +1,26 @@
+LISPM is an implementation of a simplistic LISP machine.
+
+We assume ASCII encoding. Source code can contain symbols in `[0; 126]` range.
+ASCII symbol `DEL` is not permitted same as all symbols with the 8th bit set.
+There are two kinds of atom:
+- literals: a sequence of symbols in ASCII range 42 to 126, not starting with
+  an ASCII digit. Letters are not capitalized, `ABC` and `Abc` are two distinct
+  literals;
+- unsigned numerals: decimal, no leading zeros.
+
+There are several traditional LISP builtin forms: `()` for empty list,
+`T`, `ATOM`, `CONS`, `CAR`, `CDR`, `COND`, `QUOTE`.
+The `LAMBDA` form creates a function, that can be passed used as a value.
+The `LET` form binds the names to their values (expressions are evaluated once
+at the time of binding), and evaluates an expression using those assignments.
+
+One more kind of value (apart from atoms, cons and lambdas) is a memory span.
+The machine maintains a list of several memory pages, and provides access to
+them.
+
+Special form `(STR A)` returns the memory span of the string representation of
+the input atom `A` for any literal atom.
+Function `(CHARS span)` produces the ASCII-sequence, corresponding to the
+symbols in the span.
+Another important memory span is `(PROGRAM)` -- this function returns the
+memory span of the memory page of the program.
