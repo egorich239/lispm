@@ -13,6 +13,7 @@ static const char *PC;
 static unsigned *INDEX;
 static char *STRINGS;
 static unsigned INDEX_SIZE;
+static int HASH_SHIFT_AMOUNT;
 static unsigned STRINGS_SIZE;
 static unsigned TP;
 
@@ -62,7 +63,8 @@ static void lambda_unpack(Sym a, Sym *captures, Sym *args, Sym *body) {
   *captures = l[0], *args = l[1], *body = l[2];
 }
 Sym lispm_alloc_pointer(Sym page, Sym offs, Sym len) {
-  ASSERT(is_page(page) && is_unsigned(offs) && is_unsigned(len));
+  ASSERT(is_page(page) && is_unsigned(offs) &&
+         (is_nil(len) || is_unsigned(len)));
   Sym *p;
   Sym res = st_alloc(ST_OBJ_POINTER, &p);
   return p[0] = page, p[1] = offs, p[2] = len, res;
@@ -95,11 +97,13 @@ static Sym gc(Sym root, unsigned high_mark) {
 }
 
 /* htable functions */
+#define LITERAL_NBUILTIN_BIT UPPER_BITS(1)
 static inline unsigned hashf(const char *b, const char *e, unsigned seed) {
   unsigned hash = seed;
   while (b != e)
-    hash = 33 * hash + ((unsigned)*b++);
-  return 2 * hash + 1;
+    hash = 33 * hash + ((unsigned char)*b++);
+  hash ^= (hash >> HASH_SHIFT_AMOUNT);
+  return (2654435769u * hash) >> HASH_SHIFT_AMOUNT;
 }
 static inline int str_eq(const char *b, const char *e, const char *h) {
   while (b != e)
@@ -108,55 +112,48 @@ static inline int str_eq(const char *b, const char *e, const char *h) {
 }
 static inline Sym lispm_literal_is_builtin(Sym s) {
   ASSERT(is_literal(s));
-  const Sym a = INDEX[literal_ht_offs(s) + 1];
-  return is_special(a) && special_is_readonly(a);
+  return !(INDEX[literal_ht_offs(s)] & LITERAL_NBUILTIN_BIT);
 }
 static inline Sym get_assoc(Sym s) {
   ASSERT(is_literal(s));
   const Sym a = INDEX[literal_ht_offs(s) + 1];
   EVAL_CHECK(a != SYM_NO_ASSOC, ERR_EVAL);
-  return !is_special(a) ? a : (a & ~SPECIAL_READONLY_BIT);
+  return a;
 }
 static inline Sym set_assoc(Sym s, Sym assoc) {
+  EVAL_CHECK(!lispm_literal_is_builtin(s), ERR_EVAL);
   Sym *a = INDEX + (literal_ht_offs(s) + 1);
-  EVAL_CHECK(!is_special(*a) || !special_is_readonly(*a), ERR_EVAL);
   const Sym old_assoc = *a;
   return *a = assoc, old_assoc;
 }
 Sym lispm_literal_name_pointer(Sym s) {
   ASSERT(is_literal(s));
-  unsigned offs = INDEX[literal_ht_offs(s)];
-  unsigned len = __builtin_strlen(STRINGS + offs);
-  return lispm_alloc_pointer(PAGE_STRINGS, make_unsigned(offs),
-                             make_unsigned(len));
+  unsigned offs = INDEX[literal_ht_offs(s)] & ~LITERAL_NBUILTIN_BIT;
+  return lispm_alloc_pointer(PAGE_STRINGS, make_unsigned(offs), SYM_NIL);
 }
 
-static Sym insert_cstr(const char *lit, Sym assoc);
 static Sym ensure(const char *b, const char *e) {
   unsigned offset = 5381;
   int attempt = 0;
   for (; attempt < STRINGS_INDEX_LOOKUP_LIMIT; ++attempt) {
-    offset = hashf(b, e, offset) & (INDEX_SIZE - 1);
+    offset = hashf(b, e, offset);
+    ASSERT(offset < INDEX_SIZE);
     unsigned *entry = INDEX + (2 * offset);
     if (!*entry) break; /* empty slot */
-    if (str_eq(b, e, STRINGS + *entry))
+    if (str_eq(b, e, STRINGS + (*entry & ~LITERAL_NBUILTIN_BIT)))
       return make_literal(2 * offset); /* found! */
   }
   EVAL_CHECK(attempt < STRINGS_INDEX_LOOKUP_LIMIT, ERR_OOM);
   EVAL_CHECK(TP + (e - b + 1) <= STRINGS_SIZE, ERR_OOM);
 
   unsigned *entry = INDEX + (2 * offset);
-  entry[0] = TP;
+  entry[0] = TP | LITERAL_NBUILTIN_BIT;
   entry[1] = SYM_NO_ASSOC;
   while (b != e)
     STRINGS[TP++] = *b++;
   STRINGS[TP++] = 0;
   TP += 3u, TP &= ~3u;
   return make_literal(2 * offset);
-}
-static inline Sym insert_cstr(const char *lit, Sym assoc) {
-  const Sym res = ensure(lit, lit + __builtin_strlen(lit));
-  return set_assoc(res, assoc), res;
 }
 
 /* pages */
@@ -218,14 +215,14 @@ static Sym lex(void) {
 }
 
 /* parser */
-static Sym parse_object(Sym tok) {
+static Sym lispm_parse0(Sym tok) {
   if (is_atom(tok)) return tok;
   EVAL_CHECK(tok == TOK_LPAREN, ERR_PARSE);
   if ((tok = lex()) == TOK_RPAREN) return SYM_NIL;
   unsigned low_mark = PP;
   while (tok != TOK_RPAREN) {
     EVAL_CHECK(++PP < SP, ERR_PARSE);
-    STACK[PP - 1] = parse_object(tok);
+    STACK[PP - 1] = lispm_parse0(tok);
     tok = lex();
   }
   Sym res = lispm_alloc_cons(STACK[--PP], SYM_NIL);
@@ -337,6 +334,7 @@ static Sym EVAL(Sym e) { /* can be done in lisp, but let's not */
   return eval0(lispm_evquote(e));
 }
 static struct Builtin BUILTINS[BUILTINS_TABLE_SIZE] = {
+    {"T"},
     {"QUOTE", lispm_evquote, lispm_evcap_quote},
     {"COND", lispm_evcon, lispm_evcap_con},
     {"LAMBDA", lispm_evlambda, lispm_evcap_lambda},
@@ -447,11 +445,10 @@ static int lispm_main(struct PageDesc *table, unsigned offs,
   INDEX = PAGE_TABLE[page_pt_offs(PAGE_INDEX)].begin;
   INDEX_SIZE =
       (((unsigned *)PAGE_TABLE[page_pt_offs(PAGE_INDEX)].end) - INDEX) / 2;
-  if (INDEX_SIZE & (INDEX_SIZE - 1)) return 1;
+  if (INDEX_SIZE < 2 || (INDEX_SIZE & (INDEX_SIZE - 1))) return 1;
+  HASH_SHIFT_AMOUNT = __builtin_clz(INDEX_SIZE) + 1;
 
   TP = ERROR_MESSAGE_SIZE;
-  insert_cstr("T", SYM_T | SPECIAL_READONLY_BIT);
-
   while (BUILTINS[BUILTINS_SIZE].name)
     ++BUILTINS_SIZE;
   while (rt && rt->name) {
@@ -459,11 +456,17 @@ static int lispm_main(struct PageDesc *table, unsigned offs,
     BUILTINS[BUILTINS_SIZE++] = *rt++;
   }
   for (int i = 0; i < BUILTINS_SIZE; ++i) {
-    insert_cstr(BUILTINS[i].name,
-                MAKE_BUILTIN_FN(i) | SPECIAL_READONLY_BIT |
-                    (BUILTINS[i].evcap ? SPECIAL_FORM_BIT : 0));
+    const struct Builtin *bi = BUILTINS + i;
+    const char *n = bi->name;
+    Sym s = ensure(n, n + __builtin_strlen(n));
+    unsigned *entry = INDEX + literal_ht_offs(s);
+    entry[0] &= ~LITERAL_NBUILTIN_BIT;
+    entry[1] =
+        bi->eval
+            ? (MAKE_BUILTIN_FN(i) | (BUILTINS[i].evcap ? SPECIAL_FORM_BIT : 0))
+            : SYM_T + i;
   }
-  STACK[1] = eval0(parse_object(lex()));
+  STACK[1] = eval0(lispm_parse0(lex()));
   STACK[0] = is_valid_result(STACK[1]) ? SYM_NIL : ERR_EVAL;
   return 0;
 }

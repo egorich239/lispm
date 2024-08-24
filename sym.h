@@ -4,8 +4,8 @@
 
 /* symbol: last two bits encode its kind
  * - 0    ...    00: SYM_NIL
- * -      <OFFS> 00: symbol from the table, at '<OFFS>' position of the key
- *                   pointer;
+ * - 0    <OFFS> 00: builtin symbol in htable, key pointer at '<OFFS>';
+ * - 1    <OFFS> 00: user-defined symbol in htable, key pointer at '<OFFS>';
  * -       <NUM> 01: for atoms that are decimal representation of bits of <NUM>;
  * -   <CONS> 00 10: stack position of the pair car (CONS), cdr (CONS+1);
  * - <LAMBDA> 01 10: stack position of the triplet captures (LAMBDA), args (+1),
@@ -16,23 +16,21 @@
  *                   offs is byte offset at this page, encoded as numerical;
  *                   memory range encodes the range as numerical.
  *
- * The 11 trailing bits are reserved for special symbols;
- * all of them have upper bit zero, which is used by hash table to
- * mark the literals that cannot be overriden by a locally bound variable.
+ * The 11 trailing bits are reserved for special symbols.
  *
- * - 0 F <OFFS> 00 11: builtin function at the specific offset in the ftable;
+ * - F   <OFFS> 00 11: builtin function at the specific offset in the ftable;
  *                     when F bit is 1, it denotes a special form;
  *                     special forms receive their params unevaluated.
- * - 0   <OFFS> 01 11: page, offs specifies offset in page table;
+ * -     <OFFS> 01 11: page, offs specifies offset in page table;
  *
- * - 0      ... 11 11: special values (assuming 32-bit unsigned)
+ * -        ... 11 11: special values (assuming 32-bit unsigned)
  *          0000 000F: T
- *          7FFF FFDF: used during evaluation of capture lists of LET;
+ *          FFFF FFDF: used during evaluation of capture lists of LET;
  *                   marks a literal first defined in the previous part of
  *                   the LET evaluations;
- *          7FFF FFEF: used during evaluation of capture lists of LAMBDA/LET;
+ *          FFFF FFEF: used during evaluation of capture lists of LAMBDA/LET;
  *                   marks a literal already in the capture list;
- *          7FFF FFFF: no value currently associated with the literal.
+ *          FFFF FFFF: no value currently associated with the literal.
  */
 typedef unsigned Sym;
 
@@ -120,16 +118,11 @@ static inline Sym make_pointer(unsigned st_offs) {
 static inline int is_pointer(Sym s) { return st_obj_kind(s) == ST_OBJ_POINTER; }
 
 /* specials, ctors are defined in macros, to be compile time consts */
-#define SPECIAL_READONLY_BIT UPPER_BITS(1)
 static inline int is_special(Sym s) { return (s & 3u) == 3u; }
-static inline int special_is_readonly(Sym s) {
-  ASSERT(is_special(s));
-  return s & SPECIAL_READONLY_BIT;
-}
 
 /* builtin functions */
 /* special forms receive their arguments un-evaluated */
-#define SPECIAL_FORM_BIT         (UPPER_BITS(1) >> 1)
+#define SPECIAL_FORM_BIT         UPPER_BITS(1)
 #define MAKE_BUILTIN_FN(ft_offs) (((ft_offs) << 4) | 3u)
 static inline int is_builtin_fn(Sym s) { return (s & 15u) == 3u; }
 static inline int is_special_form(Sym s) {
@@ -137,7 +130,7 @@ static inline int is_special_form(Sym s) {
 }
 static inline unsigned builtin_fn_ft_offs(Sym s) {
   ASSERT(is_builtin_fn(s));
-  return (s & ~(SPECIAL_READONLY_BIT | SPECIAL_FORM_BIT)) >> 4;
+  return (s & ~SPECIAL_FORM_BIT) >> 4;
 }
 
 /* pages */
@@ -146,7 +139,7 @@ static inline int is_page(Sym s) { return (s & 15u) == 7u; }
 static inline unsigned page_pt_offs(Sym s) { return s >> 4; }
 
 /* special values */
-#define MAKE_SPECIAL_VALUE(val) ((((val) << 4) | 15u) & ~SPECIAL_READONLY_BIT)
+#define MAKE_SPECIAL_VALUE(val) (((val) << 4) | 15u)
 
 #define SYM_NIL      0u
 #define SYM_T        MAKE_SPECIAL_VALUE(0)
