@@ -95,10 +95,11 @@ static Sym gc(Sym root, unsigned high_mark) {
 }
 
 /* htable functions */
-static inline unsigned djb2(const char *b, const char *e, unsigned hash) {
+static inline unsigned hashf(const char *b, const char *e, unsigned seed) {
+  unsigned hash = seed;
   while (b != e)
     hash = 33 * hash + ((unsigned)*b++);
-  return hash;
+  return 2 * hash + 1;
 }
 static inline int str_eq(const char *b, const char *e, const char *h) {
   while (b != e)
@@ -132,11 +133,10 @@ Sym lispm_literal_name_pointer(Sym s) {
 
 static Sym insert_cstr(const char *lit, Sym assoc);
 static Sym ensure(const char *b, const char *e) {
-  unsigned offset = djb2(b, e, 5381u);
-  const unsigned step = 2 * djb2(b, e, ~offset) + 1; /* must be non-zero */
+  unsigned offset = 5381;
   int attempt = 0;
-  for (; attempt < STRINGS_INDEX_LOOKUP_LIMIT; ++attempt, offset += step) {
-    offset &= (INDEX_SIZE - 1);
+  for (; attempt < STRINGS_INDEX_LOOKUP_LIMIT; ++attempt) {
+    offset = hashf(b, e, offset) & (INDEX_SIZE - 1);
     unsigned *entry = INDEX + (2 * offset);
     if (!*entry) break; /* empty slot */
     if (str_eq(b, e, STRINGS + *entry))
