@@ -28,9 +28,9 @@ __attribute__((noreturn)) void lispm_report_error(Sym err) {
   STACK[0] = err;
   THROW(1);
 }
-void lispm_error_diag(const char *msg) {
+void lispm_error_message_set(const char *msg) {
   int i = 0;
-  while (i < STRINGS_START_OFFSET && (STRINGS[i++] = *msg++))
+  while (i + 1 < ERROR_MESSAGE_SIZE && (STRINGS[i++] = *msg++))
     ;
 }
 
@@ -449,7 +449,7 @@ static int lispm_main(struct PageDesc *table, unsigned offs,
       (((unsigned *)PAGE_TABLE[page_pt_offs(PAGE_INDEX)].end) - INDEX) / 2;
   if (INDEX_SIZE & (INDEX_SIZE - 1)) return 1;
 
-  TP = STRINGS_START_OFFSET;
+  TP = ERROR_MESSAGE_SIZE;
   insert_cstr("T", SYM_T | SPECIAL_READONLY_BIT);
 
   while (BUILTINS[BUILTINS_SIZE].name)

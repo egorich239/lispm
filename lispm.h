@@ -43,12 +43,9 @@ struct Builtin {
 };
 #define BUILTINS_TABLE_SIZE 128u
 
-/* The initial part of the table can be used for user-provided error message, or
- * message in verbose mode
- */
-#define STRINGS_START_OFFSET 256u
-_Static_assert(STRINGS_START_OFFSET > 0,
-               "no symbol shall share the address on SYM_NIL");
+/* The initial part of the strings table contains the error message string. */
+#define ERROR_MESSAGE_SIZE 256u
+_Static_assert(ERROR_MESSAGE_SIZE > 0, "error message size must be non-zero");
 
 /* Strings index hashing is rather naive,
    and attempts to look at the next several slots.
@@ -70,13 +67,13 @@ Sym lispm_exec(struct PageDesc *page_table, unsigned offs,
 #define EVAL_CHECK(cond, err)                                                  \
   do {                                                                         \
     if (!(cond)) {                                                             \
-      lispm_error_diag("Failed assertion: " #cond);                            \
+      lispm_error_message_set("Failed assertion: " #cond);                     \
       lispm_report_error(err);                                                 \
     }                                                                          \
   } while (0)
 #endif
 __attribute__((noreturn)) void lispm_report_error(Sym err);
-void lispm_error_diag(const char* msg);
+void lispm_error_message_set(const char *msg);
 
 struct PageDesc *lispm_page_desc(Sym pg);
 void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size);
