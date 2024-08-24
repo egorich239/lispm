@@ -74,7 +74,7 @@
         ))
     )
 
-    (EVAL (PARSE (snd (tarfs (QUOTE bootstrap/1)))))
+    (EVAL (PARSE (snd (tarfs (QUOTE bootstrap/001-module)))))
 
 )
 
