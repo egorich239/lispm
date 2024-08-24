@@ -4,13 +4,17 @@
 
 #include <stdio.h>
 
+static const char *literal_name(Sym l) {
+  Sym pg, offs, len, p = lispm_literal_name_pointer(l);
+  lispm_pointer_unpack(p, &pg, &offs, &len);
+  return lispm_page_loc(pg, unsigned_val(offs), 1);
+}
+
 void lispm_dump(const struct PageDesc *table, Sym sym) {
   static int indent = 0;
   static int same_line = 0;
 
-  const unsigned *index = table[page_pt_offs(PAGE_INDEX)].begin;
   const unsigned *stack = table[page_pt_offs(PAGE_STACK)].begin;
-  const char *strings = table[page_pt_offs(PAGE_STRINGS)].begin;
 
   if (!same_line)
     for (int i = 0; i < indent; ++i)
@@ -24,7 +28,7 @@ void lispm_dump(const struct PageDesc *table, Sym sym) {
   } else if (is_unsigned(sym)) {
     fprintf(stderr, "%u\n", unsigned_val(sym));
   } else if (is_literal(sym)) {
-    fprintf(stderr, "%s\n", strings + (index[literal_ht_offs(sym)]));
+    fprintf(stderr, "%s\n", literal_name(sym));
   } else if (is_special(sym)) {
     fprintf(stderr, "<special %x>\n", sym);
   } else if (is_cons(sym)) {

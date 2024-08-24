@@ -74,6 +74,8 @@ static inline Sym unsigned_mul(Sym a, Sym b, int *oflow) {
            (res & UPPER_BITS(2));
   return make_unsigned(res);
 }
+static inline Sym unsigned_band(Sym a, Sym b) { return a & b; }
+static inline Sym unsigned_bnot(Sym a) { return ~a ^ 3u; }
 
 /* stack objects*/
 #define ST_OBJ_CONS    2u

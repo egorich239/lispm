@@ -3,7 +3,7 @@
 #include "rt.h"
 #include "sym.h"
 
-#define VERBOSE_FAILURES 0
+#define VERBOSE_FAILURES 1
 
 /* NOTE! These are access flags from the perspective of the Lisp program,
          the underlying pages may be less restrictive, and indeed will be
@@ -74,6 +74,9 @@ Sym lispm_exec(struct PageDesc *page_table, unsigned offs,
 #endif
 __attribute__((noreturn)) void lispm_report_error(Sym err);
 void lispm_error_message_set(const char *msg);
+
+/* pc must be from the PROGRAM page */
+Sym lispm_parse(const char *pc);
 
 struct PageDesc *lispm_page_desc(Sym pg);
 void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size);

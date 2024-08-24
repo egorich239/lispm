@@ -1,4 +1,4 @@
-(LET 
+(LET
     (
         (nil (QUOTE ()))
         (true (QUOTE T))
@@ -16,7 +16,9 @@
 
         (compose (LAMBDA (f g) (LAMBDA (x) (f (g x)))))
 
+        (caar (LAMBDA (seq) (CAR (CAR seq))))
         (cadr (LAMBDA (seq) (CAR (CDR seq))))
+        (cdar (LAMBDA (seq) (CDR (CAR seq))))
         (cddr (LAMBDA (seq) (CDR (CDR seq))))
 
         (pair CONS)
@@ -46,6 +48,39 @@
             (foldr. foldr. seq))))
         (reverse (LAMBDA (seq) (foldl pair~ nil seq)))
 
+        (parse-oct (LAMBDA (seq) (foldl (LAMBDA (acc d) (ADD (MUL 8 acc) (SUB d 48))) 0 seq)))
+
+        (tarfs (LET
+            (
+                (tar-file-ctor. (LAMBDA (rec addr) (LET
+                    (
+                        (name (PARSE addr))
+                        (len (parse-oct (CHARS (SPAN addr 124 11))))
+                        (data (SPAN addr 512 len))
+                        (skip (BAND (ADD len 511) (BNOT 511)))
+                        (next (SPAN addr (ADD skip 512)))
+                    )
+                    (CONS (pair name data) (rec rec next))
+                )))
+                (tar-list-ctor. (LAMBDA (rec addr) (COND
+                    ((EQ (GETC addr) 0) nil)
+                    (true (tar-file-ctor. rec addr)))))
+                (tar-list (tar-list-ctor. tar-list-ctor. (PROGRAM)))
+                (get-file. (LAMBDA (rec f seq) (COND
+                    ((EQ f (caar seq)) (CAR seq))
+                    (true (rec rec f (CDR seq))))))
+            )
+            (LAMBDA (f) (get-file. get-file. f tar-list))
+        ))
+    )
+
+    (EVAL (PARSE (snd (tarfs (QUOTE bootstrap/1)))))
+
+)
+
+
+(LET 
+    (
         (infixl (LAMBDA (seq) (LET (
             (infix. (LAMBDA (rec z seq) (COND
                 ((EQ nil seq) z)
@@ -140,7 +175,6 @@
             (returnS l)
         ))))
 
-        (parse-unsigned8 (LAMBDA (seq) (foldl (LAMBDA (acc d) (ADD (MUL 8 acc) (SUB d 48))) 0 seq)))
 
     )
 

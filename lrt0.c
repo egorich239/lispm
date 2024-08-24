@@ -32,7 +32,10 @@ static Sym GETC(Sym a) {
   Sym page, offs, len, ptr = lispm_evquote(a);
   EVAL_CHECK(is_pointer(ptr), ERR_EVAL);
   lispm_pointer_unpack(ptr, &page, &offs, &len);
-  return make_unsigned(*(unsigned char *)lispm_page_loc(page, offs, 1));
+  if (!unsigned_val(len))
+    return unsigned_val(0); /* position right after the interval */
+  return make_unsigned(
+      *(unsigned char *)lispm_page_loc(page, unsigned_val(offs), 1));
 }
 static Sym COPY(Sym a) {
   Sym dest, src, dest_offs, src_offs, dest_len, src_len;
@@ -66,6 +69,17 @@ static Sym CHARS(Sym a) {
     res = lispm_alloc_cons(make_unsigned(*--p), res);
   return res;
 }
+static Sym BAND(Sym a) {
+  Sym p, q;
+  lispm_args_unpack2(a, &p, &q);
+  EVAL_CHECK(is_unsigned(p) && is_unsigned(q), ERR_EVAL);
+  return unsigned_band(p, q);
+}
+static Sym BNOT(Sym a) {
+  a = lispm_evquote(a);
+  EVAL_CHECK(is_unsigned(a), ERR_EVAL);
+  return unsigned_bnot(a);
+}
 static Sym ADD(Sym a) {
   Sym p, q;
   lispm_args_unpack2(a, &p, &q);
@@ -93,38 +107,35 @@ static Sym SUB(Sym a) {
   EVAL_CHECK(!overflow, ERR_EVAL);
   return r;
 }
-static Sym SPAN(Sym a) {
-  Sym p, b, l, e;
-  lispm_cons_unpack_user(a, &p, &b);
-  lispm_cons_unpack_user(b, &b, &l);
-  EVAL_CHECK(is_pointer(p), ERR_EVAL);
-  Sym pg, os, ln;
-  lispm_pointer_unpack(p, &pg, &os, &ln);
-  EVAL_CHECK(b <= ln, ERR_EVAL);
+static Sym SPAN(Sym args) {
+  Sym span, start, len;
+  lispm_cons_unpack_user(args, &span, &start);
+  lispm_cons_unpack_user(start, &start, &len);
+  EVAL_CHECK(is_pointer(span), ERR_EVAL);
+  Sym page, offs, old_len;
+  lispm_pointer_unpack(span, &page, &offs, &old_len);
+  EVAL_CHECK(start <= old_len, ERR_EVAL);
   int o;
-  if (is_nil(l))
-    l = unsigned_sub(ln, b, &o);
-  else
-    l = lispm_evquote(l);
-  e = unsigned_add(b, l, &o);
-  EVAL_CHECK(!e && e <= ln, ERR_EVAL);
-  return lispm_alloc_pointer(pg, unsigned_add(os, b, &o), l);
+  len = !is_nil(len) ? lispm_evquote(len) : unsigned_sub(old_len, start, &o);
+  EVAL_CHECK(len <= old_len, ERR_EVAL);
+  return lispm_alloc_pointer(page, unsigned_add(offs, start, &o), len);
+}
+static Sym PARSE(Sym a) {
+  a = lispm_evquote(a);
+  EVAL_CHECK(is_pointer(a), ERR_EVAL);
+  Sym pg, offs, len;
+  lispm_pointer_unpack(a, &pg, &offs, &len);
+  return lispm_parse(lispm_page_loc(pg, unsigned_val(offs), 1));
 }
 
 struct Builtin LRT0[] = {
-    {"CONS", CONS},
-    {"CAR", CAR},
-    {"CDR", CDR},
-    {"ATOM", ATOM},
-    {"EQ", EQ},
-    {"PROGRAM", PROGRAM},
-    {"STR", STR, lispm_evcap_quote},
-    {"CHARS", CHARS},
-    {"GETC", GETC},
-    {"COPY", COPY},
-    {"ADD", ADD},
-    {"MUL", MUL},
-    {"SUB", SUB},
-    {"SPAN", SPAN},
-    {},
+    {"CONS", CONS},   {"CAR", CAR},
+    {"CDR", CDR},     {"ATOM", ATOM},
+    {"EQ", EQ},       {"PROGRAM", PROGRAM},
+    {"SPAN", SPAN},   {"STR", STR, lispm_evcap_quote},
+    {"CHARS", CHARS}, {"GETC", GETC},
+    {"COPY", COPY},   {"ADD", ADD},
+    {"MUL", MUL},     {"SUB", SUB},
+    {"BAND", BAND},   {"BNOT", BNOT},
+    {"PARSE", PARSE}, {},
 };

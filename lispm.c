@@ -6,6 +6,7 @@
 static struct PageDesc *PAGE_TABLE;
 
 /* program text counter */
+static const char *PROGRAM;
 static const char *PROGRAM_END;
 static const char *PC;
 
@@ -169,7 +170,7 @@ unsigned lispm_page_size(Sym pg, int elt_size_log2) {
 void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
   ASSERT(is_page(pg) && !(elt_size & (elt_size - 1)));
   const struct PageDesc *p = PAGE_TABLE + page_pt_offs(pg);
-  ASSERT(offs * elt_size <= p->end - p->begin);
+  ASSERT(offs * elt_size < p->end - p->begin);
   return p->begin + offs * elt_size;
 }
 
@@ -229,6 +230,11 @@ static Sym lispm_parse0(Sym tok) {
   while (low_mark < PP)
     res = lispm_alloc_cons(STACK[--PP], res);
   return res;
+}
+Sym lispm_parse(const char *pc) {
+  ASSERT(PROGRAM <= pc && pc < PROGRAM_END);
+  PC = pc;
+  return lispm_parse0(lex());
 }
 
 /* eval */
@@ -431,8 +437,8 @@ static int lispm_main(struct PageDesc *table, unsigned offs,
     PAGE_TABLE[i].flags = PAGE_FLAG_RO;
   }
 
+  PROGRAM = table[page_pt_offs(PAGE_PROGRAM)].begin;
   PROGRAM_END = table[page_pt_offs(PAGE_PROGRAM)].end;
-  PC = table[page_pt_offs(PAGE_PROGRAM)].begin + offs;
 
   STACK = PAGE_TABLE[page_pt_offs(PAGE_STACK)].begin;
   STACK_END = PAGE_TABLE[page_pt_offs(PAGE_STACK)].end;
@@ -466,7 +472,8 @@ static int lispm_main(struct PageDesc *table, unsigned offs,
             ? (MAKE_BUILTIN_FN(i) | (BUILTINS[i].evcap ? SPECIAL_FORM_BIT : 0))
             : SYM_T + i;
   }
-  STACK[1] = eval0(lispm_parse0(lex()));
+  Sym p = lispm_parse(PROGRAM + offs);
+  STACK[1] = eval0(p);
   STACK[0] = is_valid_result(STACK[1]) ? SYM_NIL : ERR_EVAL;
   return 0;
 }
