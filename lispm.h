@@ -21,12 +21,12 @@ struct PageDesc {
 };
 
 /* pages in page table */
-#define PAGE_PAGE_TABLE         MAKE_PAGE(0) /* self-description */
-#define PAGE_PROGRAM            MAKE_PAGE(1) /* lisp program code */
-#define PAGE_STACK              MAKE_PAGE(2) /* stack, at least 1024 unsigned's */
-#define PAGE_INDEX              MAKE_PAGE(3) /* hash table index */
-#define PAGE_STRINGS            MAKE_PAGE(4) /* hash table strings */
-#define PAGE_TABLE_PRELUDE_SIZE 5
+#define LISPM_PAGE_PAGE_TABLE         LISPM_MAKE_PAGE(0) /* self-description */
+#define LISPM_PAGE_PROGRAM            LISPM_MAKE_PAGE(1) /* lisp program code */
+#define LISPM_PAGE_STACK              LISPM_MAKE_PAGE(2) /* execution stack */
+#define LISPM_PAGE_INDEX              LISPM_MAKE_PAGE(3) /* hash table index */
+#define LISPM_PAGE_STRINGS            LISPM_MAKE_PAGE(4) /* hash table strings */
+#define LISPM_PAGE_TABLE_PRELUDE_SIZE 5
 
 /*
    Arguments are provided as a SYM_NIL-terminated CONS-sequence.
@@ -82,14 +82,14 @@ struct PageDesc *lispm_page_desc(Sym pg);
 void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size);
 unsigned lispm_page_size(Sym pg, int elt_size_log2);
 
-Sym lispm_literal_name_pointer(Sym s);
+Sym lispm_literal_name_span(Sym s);
 
 Sym lispm_alloc_cons(Sym car, Sym cdr);
 void lispm_cons_unpack(Sym a, Sym *car, Sym *cdr);
 void lispm_cons_unpack_user(Sym a, Sym *car, Sym *cdr);
 
-Sym lispm_alloc_pointer(Sym page, Sym offs, Sym len);
-void lispm_pointer_unpack(Sym ptr, Sym *page, Sym *offs, Sym *len);
+Sym lispm_alloc_span(Sym page, Sym offs, Sym len);
+void lispm_span_unpack(Sym ptr, Sym *page, Sym *offs, Sym *len);
 
 Sym lispm_evcap_quote(Sym a, Sym c);
 Sym lispm_evquote(Sym a);
