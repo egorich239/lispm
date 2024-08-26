@@ -9,9 +9,17 @@ We utilize the following properties:
 1. if the higher bit is 0, then it is a valid atom symbol;
 2. if the higher bit is 1, then it is a delimiter symbol.
 */
-__attribute__((aligned(8))) static const unsigned char LEX_CHARS[24] = {
+__attribute__((aligned(8))) static const unsigned char LEX_CHARS[32] = {
+    0b11111111, /* 0x00 */
+    0b11111111, /* 0x04*/
+    0b11111111, /* 0x08 */
+    0b11111111, /* 0x0C */
+    0b11111111, /* 0x10 */
+    0b11111111, /* 0x14 */
+    0b11111111, /* 0x18 */
+    0b11111111, /* 0x1C */
     0b11100011, /* #"!<SP> */
-    0b11000000, /* '&%$ */
+    0b10000000, /* '&%$ */
     0b00001010, /* +*)( */
     0b00000011, /* /.-, */
     0b01010101, /* 3210 */
@@ -36,8 +44,8 @@ __attribute__((aligned(8))) static const unsigned char LEX_CHARS[24] = {
     0b11001111, /* <DEL>~}| */
 };
 
-#define LEX_CHAR_CAT(x)    ((LEX_CHARS[((x) - 32) >> 2] >> (((x) - 32) & 3)) & 3)
-#define LEX_IS_DELIM(x)    ((LEX_CHAR_CAT(x) & 2) == 1)
-#define LEX_IS_ATOM_SYM(x) ((LEX_CHAR_CAT(x) & 2) == 0)
-#define LEX_IS_DIGIT(x)    ((LEX_CHAR_CAT(x) & 3) == 1)
-#define LEX_IS_TOK(x)      ((LEX_CHAR_CAT(x) & 3) == 2)
+#define LEX_CHAR_CAT(x)      ((LEX_CHARS[(x) >> 2] >> (((x) & 3) << 1)) & 3)
+#define LEX_IS_DELIM(cat)    (((cat) & 2) == 2)
+#define LEX_IS_ATOM_SYM(cat) (((cat) & 2) == 0)
+#define LEX_IS_DIGIT(cat)    (((cat) & 3) == 1)
+#define LEX_IS_TOK(cat)      (((cat) & 3) == 2)

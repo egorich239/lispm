@@ -175,34 +175,55 @@ void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
 #define TOK_RPAREN TOK_SYM(')')
 
 static Sym lex(void) {
-  unsigned c;
-  do
-    EVAL_CHECK(PC < PROGRAM_END, LISPM_ERR_LEX);
-  while ((c = *PC++) <= ' ');
-  if (c == '(' || c == ')') return TOK_SYM(c);
-
-  const char *const token_begin = PC - 1;
+  enum { S_ATOM, S_NUM, S_COMMENT, S_INIT } state = S_INIT;
+  _Static_assert(LEX_IS_ATOM_SYM(S_ATOM), "S_ATOM must match the category");
+  _Static_assert(LEX_IS_DIGIT(S_NUM), "S_NUM must match the category");
+  const char *token_begin = PC;
   unsigned token_val = 0;
-#define TOKEN_VAL_MAX  (~0u >> 2)
-#define TOKEN_VAL_NONE ((unsigned)~0u)
-
-  do {
-    /* keep some symbols unavailable to regular tokens: !"#$%& */
-    EVAL_CHECK(')' < c && c < 127u, LISPM_ERR_LEX);
-    if (token_val != TOKEN_VAL_NONE && '0' <= c && c <= '9') {
-      int overflow = __builtin_umul_overflow(token_val, 10u, &token_val) ||
-                     __builtin_uadd_overflow(token_val, (unsigned)(c - '0'), &token_val) || token_val > TOKEN_VAL_MAX;
-      EVAL_CHECK(!overflow, LISPM_ERR_LEX);
-    } else {
-      token_val = TOKEN_VAL_NONE; /* not an integer literal */
+  unsigned c, cat;
+  for (; PC < PROGRAM_END; ++PC) {
+    c = (unsigned char)*PC;
+    if (c >= 128) goto lex_fail;
+    cat = LEX_CHAR_CAT(c);
+    switch (state) {
+    case S_INIT:
+      if (c <= ' ') continue;
+      if (c == ';') {
+        state = S_COMMENT;
+        continue;
+      }
+      if (LEX_IS_TOK(cat)) return ++PC, TOK_SYM(c);
+      if (LEX_IS_ATOM_SYM(cat)) {
+        token_begin = PC--, state = cat;
+        continue;
+      }
+      goto lex_fail;
+    case S_COMMENT:
+      if (c == '\n') state = S_INIT;
+      break;
+    case S_ATOM:
+      if (LEX_IS_ATOM_SYM(cat)) continue;
+      if (LEX_IS_DELIM(cat)) goto lex_atom;
+      goto lex_fail;
+    case S_NUM:
+      if (LEX_IS_DIGIT(cat) && !__builtin_umul_overflow(token_val, 10u, &token_val) &&
+          !__builtin_uadd_overflow(token_val, (unsigned)(c - '0'), &token_val))
+        continue;
+      if (LEX_IS_DELIM(cat)) goto lex_num;
+      goto lex_fail;
     }
-    EVAL_CHECK(PC < PROGRAM_END, LISPM_ERR_LEX);
-  } while ((c = *PC++) > ')');
-  --PC;
-  if (token_val == TOKEN_VAL_NONE) return ensure(token_begin, PC);
-  Sym uns = lispm_make_shortnum(token_val);
-  EVAL_CHECK(token_val == 0 || *token_begin != '0', LISPM_ERR_LEX);
-  return uns;
+  }
+  if (state == S_ATOM) goto lex_atom;
+  if (state == S_NUM) goto lex_num;
+lex_fail:
+  EVAL_CHECK(0, LISPM_ERR_LEX);
+lex_atom:
+  return ensure(token_begin, PC);
+lex_num:
+  if (token_val != 0 && *token_begin == '0') goto lex_fail;
+  if (lispm_shortnum_can_represent(token_val)) return lispm_make_shortnum(token_val);
+  return lispm_st_obj_alloc2(LISPM_ST_OBJ_LONGNUM, lispm_make_shortnum(token_val >> LISPM_SHORTNUM_BITS),
+                             lispm_make_shortnum(token_val & ((1u << LISPM_SHORTNUM_BITS) - 1)));
 }
 
 /* parser */
