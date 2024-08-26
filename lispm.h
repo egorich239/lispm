@@ -53,23 +53,22 @@ _Static_assert(ERROR_MESSAGE_SIZE > 0, "error message size must be non-zero");
 #define STRINGS_INDEX_LOOKUP_LIMIT 32u
 
 /* API */
-Sym lispm_exec(struct PageDesc *page_table, unsigned offs,
-               const struct Builtin *rt);
+Sym lispm_exec(struct PageDesc *page_table, unsigned offs, const struct Builtin *rt);
 
 /* Integration */
 /* Unlike ASSERT, these errors are caused by a bug in the user code. */
 #if !VERBOSE_FAILURES
-#define EVAL_CHECK(cond, err)                                                  \
-  do {                                                                         \
-    if (!(cond)) lispm_report_error(err);                                      \
+#define EVAL_CHECK(cond, err)                                                                                          \
+  do {                                                                                                                 \
+    if (!(cond)) lispm_report_error(err);                                                                              \
   } while (0)
 #else
-#define EVAL_CHECK(cond, err)                                                  \
-  do {                                                                         \
-    if (!(cond)) {                                                             \
-      lispm_error_message_set("Failed assertion: " #cond);                     \
-      lispm_report_error(err);                                                 \
-    }                                                                          \
+#define EVAL_CHECK(cond, err)                                                                                          \
+  do {                                                                                                                 \
+    if (!(cond)) {                                                                                                     \
+      lispm_error_message_set("Failed assertion: " #cond);                                                             \
+      lispm_report_error(err);                                                                                         \
+    }                                                                                                                  \
   } while (0)
 #endif
 __attribute__((noreturn)) void lispm_report_error(Sym err);
@@ -84,12 +83,16 @@ unsigned lispm_page_size(Sym pg, int elt_size_log2);
 
 Sym lispm_literal_name_span(Sym s);
 
+Sym lispm_st_obj_alloc2(unsigned k, Sym a, Sym b);
+void lispm_st_obj_unpack2(Sym s, Sym *a, Sym *b);
+
+Sym lispm_st_obj_alloc3(unsigned k, Sym a, Sym b, Sym c);
+void lispm_st_obj_unpack3(Sym s, Sym *a, Sym *b, Sym *c);
+
 Sym lispm_alloc_cons(Sym car, Sym cdr);
-void lispm_cons_unpack(Sym a, Sym *car, Sym *cdr);
 void lispm_cons_unpack_user(Sym a, Sym *car, Sym *cdr);
 
 Sym lispm_alloc_span(Sym page, Sym offs, Sym len);
-void lispm_span_unpack(Sym ptr, Sym *page, Sym *offs, Sym *len);
 
 Sym lispm_evcap_quote(Sym a, Sym c);
 Sym lispm_evquote(Sym a);

@@ -6,7 +6,7 @@
 
 static const char *literal_name(Sym l) {
   Sym pg, offs, len, p = lispm_literal_name_span(l);
-  lispm_span_unpack(p, &pg, &offs, &len);
+  lispm_st_obj_unpack3(p, &pg, &offs, &len);
   return lispm_page_loc(pg, lispm_shortnum_val(offs), 1);
 }
 

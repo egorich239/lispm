@@ -10,9 +10,10 @@
  * -   <CONS> 00 10: stack position of the pair car (CONS), cdr (CONS+1);
  * - <LAMBDA> 01 10: stack position of the triplet captures (LAMBDA), args (+1),
  *                   body (+2);
- * -   <WORD> 10 10: stack position of the pair of two short unsigned's,
- *                   constituting the full unsigned;
- *                   high bits at WORD, low at WORD+1;
+ * -   <WORD> 10 10: stack position of the pair, with first element representing
+ *                   the high bits of the word, and second element
+ *                   either representing the lower bits, or another `<WORD> 10 10`
+ *                   for an even longer word;
  * -    <PTR> 11 10: stack position of the triplet page (PTR), offs (PTR+1),
  *                   length of memory range;
  *                   page is the page symbol (see below),
@@ -39,9 +40,8 @@ typedef unsigned Sym;
 
 #define UPPER_BITS(n) ~(~0u >> (n))
 
-/* atoms */
+/* nil */
 static inline int lispm_sym_is_nil(Sym s) { return !s; }
-static inline int lispm_sym_is_atom(Sym s) { return (s & 2u) == 0; }
 
 /* literals */
 static inline Sym lispm_make_literal(unsigned ht_offs) { return ht_offs << 2; }
@@ -52,6 +52,7 @@ static inline unsigned lispm_literal_ht_offs(Sym s) {
 }
 
 /* unsigneds */
+#define LISPM_SHORTNUM_BITS (sizeof(Sym) * 8 - 2)
 static inline int lispm_shortnum_can_represent(unsigned val) { return (val & UPPER_BITS(2)) == 0; }
 static inline Sym lispm_make_shortnum(unsigned val) {
   ASSERT(lispm_shortnum_can_represent(val));
@@ -62,52 +63,20 @@ static inline unsigned lispm_shortnum_val(Sym s) {
   ASSERT(lispm_sym_is_shortnum(s));
   return s >> 2;
 }
-static inline Sym lispm_shortnum_add(Sym a, Sym b, int *oflow) {
-  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
-  Sym res;
-  *oflow = __builtin_uadd_overflow(a, b, &res);
-  return res ^ 3u;
-}
-static inline Sym lispm_shortnum_sub(Sym a, Sym b, int *oflow) {
-  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
-  Sym res;
-  *oflow = __builtin_usub_overflow(a, b, &res);
-  return res | 1u;
-}
-static inline Sym lispm_shortnum_mul(Sym a, Sym b, int *oflow) {
-  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
-  unsigned res;
-  *oflow = __builtin_umul_overflow(lispm_shortnum_val(a), lispm_shortnum_val(b), &res) | (res & UPPER_BITS(2));
-  return lispm_make_shortnum(res & ~UPPER_BITS(2));
-}
-static inline Sym lispm_shortnum_band(Sym a, Sym b) {
-  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
-  return a & b;
-}
-static inline Sym lispm_shortnum_bor(Sym a, Sym b) {
-  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
-  return a | b;
-}
-static inline Sym lispm_shortnum_bxor(Sym a, Sym b) {
-  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
-  return a ^ b ^ 1;
-}
-static inline Sym lispm_shortnum_bnot(Sym a) {
-  ASSERT(lispm_sym_is_shortnum(a));
-  return ~a ^ 3u;
-}
 
 /* stack objects*/
-#define LISPM_ST_OBJ_CONS   2u
-#define LISPM_ST_OBJ_LAMBDA 6u
-#define LISPM_ST_OBJ_SPAN   14u
+#define LISPM_ST_OBJ_CONS    2u
+#define LISPM_ST_OBJ_LAMBDA  6u
+#define LISPM_ST_OBJ_LONGNUM 10u
+#define LISPM_ST_OBJ_SPAN    14u
+static inline int lispm_sym_is_st_obj(Sym s) { return (s & 3u) == 2; }
 static inline Sym lispm_make_st_obj(unsigned k, unsigned st_offs) {
-  ASSERT(k == LISPM_ST_OBJ_CONS || k == LISPM_ST_OBJ_LAMBDA || k == LISPM_ST_OBJ_SPAN);
+  ASSERT(lispm_sym_is_st_obj(k));
   return (st_offs << 4) | k;
 }
-static inline int lispm_sym_is_st_obj(Sym s) { return (s & 3u) == 2; }
 static inline unsigned lispm_st_obj_kind(Sym s) { return s & 15u; }
 static inline unsigned lispm_st_obj_st_size(Sym s) {
+  ASSERT(lispm_sym_is_st_obj(s));
   /* size of the object on the stack, in words */
   return (s & 4) ? 3 : 2; /* ((s&4) >> 2) + 2 ?? */
 }
@@ -121,6 +90,9 @@ static inline Sym lispm_st_obj_offset_by(Sym s, unsigned offs) {
   return s + (offs << 4);
 }
 
+/* atoms */
+static inline int lispm_sym_is_atom(Sym s) { return (s & 2u) == 0 || (s & 15u) == LISPM_ST_OBJ_LONGNUM; }
+
 /* cons */
 static inline Sym lispm_make_cons(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_CONS, st_offs); }
 static inline int lispm_sym_is_cons(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_CONS; }
@@ -128,6 +100,10 @@ static inline int lispm_sym_is_cons(Sym s) { return lispm_st_obj_kind(s) == LISP
 /* lambda */
 static inline Sym lispm_make_lambda(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_LAMBDA, st_offs); }
 static inline int lispm_sym_is_lambda(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_LAMBDA; }
+
+/* longnum (2 or more words, similar to cons) */
+static inline Sym lispm_make_longnum(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_LONGNUM, st_offs); }
+static inline int lispm_sym_is_longnum(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_LONGNUM; }
 
 /* spans */
 static inline Sym lispm_make_span(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_SPAN, st_offs); }

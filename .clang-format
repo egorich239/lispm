@@ -1,4 +1,7 @@
 BasedOnStyle: LLVM
+AlignArrayOfStructures: Left
+AllowShortBlocksOnASingleLine: Always
 AllowShortIfStatementsOnASingleLine: true
 AlignConsecutiveMacros: true
+BreakBeforeTernaryOperators: true
 ColumnLimit: 120
