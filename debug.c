@@ -7,7 +7,7 @@
 static const char *literal_name(Sym l) {
   Sym pg, offs, len, p = lispm_literal_name_span(l);
   lispm_span_unpack(p, &pg, &offs, &len);
-  return lispm_page_loc(pg, lispm_unsigned_val(offs), 1);
+  return lispm_page_loc(pg, lispm_shortnum_val(offs), 1);
 }
 
 void lispm_dump(const struct PageDesc *table, Sym sym) {
@@ -25,8 +25,8 @@ void lispm_dump(const struct PageDesc *table, Sym sym) {
     fprintf(stderr, "()\n");
   } else if (sym == LISPM_SYM_T) {
     fprintf(stderr, "T\n");
-  } else if (lispm_sym_is_unsigned(sym)) {
-    fprintf(stderr, "%u\n", lispm_unsigned_val(sym));
+  } else if (lispm_sym_is_shortnum(sym)) {
+    fprintf(stderr, "%u\n", lispm_shortnum_val(sym));
   } else if (lispm_sym_is_literal(sym)) {
     fprintf(stderr, "%s\n", literal_name(sym));
   } else if (lispm_sym_is_special(sym)) {

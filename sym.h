@@ -6,10 +6,13 @@
  * - 0    ...    00: LISPM_SYM_NIL
  * - 0    <OFFS> 00: builtin symbol in htable, key pointer at '<OFFS>';
  * - 1    <OFFS> 00: user-defined symbol in htable, key pointer at '<OFFS>';
- * -       <NUM> 01: for atoms that are decimal representation of bits of <NUM>;
+ * -       <NUM> 01: short inline unsigned;
  * -   <CONS> 00 10: stack position of the pair car (CONS), cdr (CONS+1);
  * - <LAMBDA> 01 10: stack position of the triplet captures (LAMBDA), args (+1),
  *                   body (+2);
+ * -   <WORD> 10 10: stack position of the pair of two short unsigned's,
+ *                   constituting the full unsigned;
+ *                   high bits at WORD, low at WORD+1;
  * -    <PTR> 11 10: stack position of the triplet page (PTR), offs (PTR+1),
  *                   length of memory range;
  *                   page is the page symbol (see below),
@@ -49,47 +52,48 @@ static inline unsigned lispm_literal_ht_offs(Sym s) {
 }
 
 /* unsigneds */
-static inline Sym lispm_make_unsigned(unsigned val) {
-  ASSERT((val & UPPER_BITS(2)) == 0);
+static inline int lispm_shortnum_can_represent(unsigned val) { return (val & UPPER_BITS(2)) == 0; }
+static inline Sym lispm_make_shortnum(unsigned val) {
+  ASSERT(lispm_shortnum_can_represent(val));
   return (val << 2) | 1u;
 }
-static inline int lispm_sym_is_unsigned(Sym s) { return (s & 3u) == 1; }
-static inline unsigned lispm_unsigned_val(Sym s) {
-  ASSERT(lispm_sym_is_unsigned(s));
+static inline int lispm_sym_is_shortnum(Sym s) { return (s & 3u) == 1; }
+static inline unsigned lispm_shortnum_val(Sym s) {
+  ASSERT(lispm_sym_is_shortnum(s));
   return s >> 2;
 }
-static inline Sym lispm_unsigned_add(Sym a, Sym b, int *oflow) {
-  ASSERT(lispm_sym_is_unsigned(a) && lispm_sym_is_unsigned(b));
+static inline Sym lispm_shortnum_add(Sym a, Sym b, int *oflow) {
+  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
   Sym res;
   *oflow = __builtin_uadd_overflow(a, b, &res);
   return res ^ 3u;
 }
-static inline Sym lispm_unsigned_sub(Sym a, Sym b, int *oflow) {
-  ASSERT(lispm_sym_is_unsigned(a) && lispm_sym_is_unsigned(b));
+static inline Sym lispm_shortnum_sub(Sym a, Sym b, int *oflow) {
+  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
   Sym res;
   *oflow = __builtin_usub_overflow(a, b, &res);
   return res | 1u;
 }
-static inline Sym lispm_unsigned_mul(Sym a, Sym b, int *oflow) {
-  ASSERT(lispm_sym_is_unsigned(a) && lispm_sym_is_unsigned(b));
+static inline Sym lispm_shortnum_mul(Sym a, Sym b, int *oflow) {
+  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
   unsigned res;
-  *oflow = __builtin_umul_overflow(lispm_unsigned_val(a), lispm_unsigned_val(b), &res) | (res & UPPER_BITS(2));
-  return lispm_make_unsigned(res & ~UPPER_BITS(2));
+  *oflow = __builtin_umul_overflow(lispm_shortnum_val(a), lispm_shortnum_val(b), &res) | (res & UPPER_BITS(2));
+  return lispm_make_shortnum(res & ~UPPER_BITS(2));
 }
-static inline Sym lispm_unsigned_band(Sym a, Sym b) {
-  ASSERT(lispm_sym_is_unsigned(a) && lispm_sym_is_unsigned(b));
+static inline Sym lispm_shortnum_band(Sym a, Sym b) {
+  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
   return a & b;
 }
-static inline Sym lispm_unsigned_bor(Sym a, Sym b) {
-  ASSERT(lispm_sym_is_unsigned(a) && lispm_sym_is_unsigned(b));
+static inline Sym lispm_shortnum_bor(Sym a, Sym b) {
+  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
   return a | b;
 }
-static inline Sym lispm_unsigned_bxor(Sym a, Sym b) {
-  ASSERT(lispm_sym_is_unsigned(a) && lispm_sym_is_unsigned(b));
+static inline Sym lispm_shortnum_bxor(Sym a, Sym b) {
+  ASSERT(lispm_sym_is_shortnum(a) && lispm_sym_is_shortnum(b));
   return a ^ b ^ 1;
 }
-static inline Sym lispm_unsigned_bnot(Sym a) {
-  ASSERT(lispm_sym_is_unsigned(a));
+static inline Sym lispm_shortnum_bnot(Sym a) {
+  ASSERT(lispm_sym_is_shortnum(a));
   return ~a ^ 3u;
 }
 

@@ -64,7 +64,7 @@ static void lispm_lambda_unpack(Sym a, Sym *captures, Sym *args, Sym *body) {
   *captures = l[0], *args = l[1], *body = l[2];
 }
 Sym lispm_alloc_span(Sym page, Sym offs, Sym len) {
-  ASSERT(lispm_sym_is_page(page) && lispm_sym_is_unsigned(offs) && lispm_sym_is_unsigned(len));
+  ASSERT(lispm_sym_is_page(page) && lispm_sym_is_shortnum(offs) && lispm_sym_is_shortnum(len));
   Sym *p;
   Sym res = lispm_st_alloc(LISPM_ST_OBJ_SPAN, &p);
   return p[0] = page, p[1] = offs, p[2] = len, res;
@@ -128,7 +128,7 @@ Sym lispm_literal_name_span(Sym s) {
   ASSERT(lispm_sym_is_literal(s));
   unsigned offs = INDEX[lispm_literal_ht_offs(s)] & ~LITERAL_NBUILTIN_BIT;
   unsigned len = __builtin_strlen(STRINGS + offs);
-  return lispm_alloc_span(LISPM_PAGE_STRINGS, lispm_make_unsigned(offs), lispm_make_unsigned(len));
+  return lispm_alloc_span(LISPM_PAGE_STRINGS, lispm_make_shortnum(offs), lispm_make_shortnum(len));
 }
 
 static Sym ensure(const char *b, const char *e) {
@@ -205,7 +205,7 @@ static Sym lex(void) {
   } while ((c = *PC++) > ')');
   --PC;
   if (token_val == TOKEN_VAL_NONE) return ensure(token_begin, PC);
-  Sym uns = lispm_make_unsigned(token_val);
+  Sym uns = lispm_make_shortnum(token_val);
   EVAL_CHECK(token_val == 0 || *token_begin != '0', LISPM_ERR_LEX);
   return uns;
 }
@@ -340,7 +340,7 @@ static struct Builtin BUILTINS[BUILTINS_TABLE_SIZE] = {
 static unsigned BUILTINS_SIZE;
 
 static Sym evcap0(Sym p, Sym c) {
-  if (lispm_sym_is_unsigned(p)) return c; /* unsigned: no need to capture */
+  if (lispm_sym_is_shortnum(p)) return c; /* unsigned: no need to capture */
   if (lispm_sym_is_literal(p)) {
     if (lispm_literal_is_builtin(p)) return c; /* builtins: no need to capture */
     const Sym a = lispm_literal_get_assoc(p);
@@ -410,7 +410,7 @@ static Sym evapply(Sym e) {
   return lispm_restore_shadow(s, LISPM_SYM_NIL), res;
 }
 static Sym eval0(Sym e) {
-  if (lispm_sym_is_unsigned(e)) return e;
+  if (lispm_sym_is_shortnum(e)) return e;
   if (lispm_sym_is_literal(e)) return lispm_literal_get_assoc(e);
   unsigned mark = SP;
   return gc(evapply(e), mark);
