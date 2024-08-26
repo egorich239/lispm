@@ -165,6 +165,8 @@ void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
 }
 
 /* lexer */
+#include "lexer.inc.h"
+
 /* Special "symbol" values returned by lexer.
    We utilize the same namespace as builtin functions,
    because lexer never produces special symbols. */
