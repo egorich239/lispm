@@ -1,3 +1,10 @@
+; This module is responsible for extremely lightweight parsing of the TAR file.
+; The idea is that the whole text of the program is located in root/ directory,
+; and it is provided to c.c start file as a .tar file, which is then loaded into
+; memory, and begins evaluation at offset 512 (i.e. the first file of a .tar
+; archive). We take care to explicitly order files lexicographically when creating
+; the archive, and bootstrap/000-tarfs should be the first one in that order.
+
 (LET
     (
         (nil (QUOTE ()))
@@ -76,12 +83,3 @@
     (EVAL (PARSE (snd (tarfs (QUOTE bootstrap/001-module)))))
 )
 
-This module is responsible for extremely lightweight parsing of the TAR file.
-The idea is that the whole text of the program is located in root/ directory,
-and it is provided to c.c start file as a .tar file, which is then loaded into
-memory, and begins evaluation at offset 512 (i.e. the first file of a .tar
-archive). We take care to explicitly order files lexicographically when creating
-the archive, and bootstrap/000-tarfs should be the first one in that order.
-
-The language does not support comments, but it ignores everything past the first
-parsed expression, hence we put comments at the bottom.
