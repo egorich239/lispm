@@ -387,11 +387,24 @@ static Sym evcap0(Sym p, Sym c) {
   }
   return c;
 }
+static Sym reverse_inplace(Sym li) {
+  /* not a public interface because it actually changes the value of a symbol, i.e. has side-effects */
+  ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_cons(li));
+  Sym cur = li, prev = LISPM_SYM_NIL, next, h;
+  while (!lispm_sym_is_nil(cur)) {
+    lispm_st_obj_unpack2(cur, &h, &next);
+    STACK[lispm_st_obj_st_offs(cur) + 1] = prev;
+    prev = cur, cur = next;
+  }
+  return prev;
+}
 static Sym evlis(Sym e) {
-  if (lispm_sym_is_nil(e)) return e;
-  Sym a, d;
-  lispm_cons_unpack_user(e, &a, &d);
-  return lispm_cons_alloc(eval0(a), evlis(d));
+  Sym res = LISPM_SYM_NIL, a;
+  while (!lispm_sym_is_nil(e)) {
+    lispm_cons_unpack_user(e, &a, &e);
+    res = lispm_cons_alloc(eval0(a), res);
+  }
+  return reverse_inplace(res);
 }
 static Sym evapply(Sym e) {
   Sym f, a;
