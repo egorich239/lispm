@@ -12,14 +12,15 @@ static unsigned num_decode(Sym s) {
 }
 static Sym num_encode(unsigned e) {
   if (lispm_shortnum_can_represent(e)) return lispm_make_shortnum(e);
-  return lispm_st_obj_alloc2(LISPM_ST_OBJ_LONGNUM, lispm_make_shortnum(e >> LISPM_SHORTNUM_BITS),
-                             lispm_make_shortnum(e & ((1u << LISPM_SHORTNUM_BITS) - 1)));
+  Sym arr[2] = {lispm_make_shortnum(e >> LISPM_SHORTNUM_BITS),
+                lispm_make_shortnum(e & ((1u << LISPM_SHORTNUM_BITS) - 1))};
+  return lispm_st_obj_alloc(LISPM_ST_OBJ_LONGNUM, arr);
 }
 
 static Sym CONS(Sym a) {
   Sym x, y;
   lispm_args_unpack2(a, &x, &y);
-  return lispm_st_obj_alloc2(LISPM_ST_OBJ_CONS, x, y);
+  return lispm_cons_alloc(x, y);
 }
 static Sym CAR(Sym a) {
   Sym car, cdr;
@@ -43,8 +44,9 @@ static Sym EQ(Sym a) {
 
 static Sym PROGRAM(Sym e) {
   EVAL_CHECK(lispm_sym_is_nil(e), LISPM_ERR_EVAL);
-  return lispm_st_obj_alloc3(LISPM_ST_OBJ_SPAN, LISPM_PAGE_PROGRAM, lispm_make_shortnum(0),
-                             lispm_make_shortnum(lispm_page_size(LISPM_PAGE_PROGRAM, 0)));
+  Sym arr[3] = {LISPM_PAGE_PROGRAM, lispm_make_shortnum(0),
+                lispm_make_shortnum(lispm_page_size(LISPM_PAGE_PROGRAM, 0))};
+  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
 }
 static Sym GETC(Sym a) {
   Sym page, offs, len, ptr = lispm_evquote(a);
@@ -81,7 +83,7 @@ static Sym CHARS(Sym a) {
   p += l;
   Sym res = LISPM_SYM_NIL;
   while (l--)
-    res = lispm_st_obj_alloc2(LISPM_ST_OBJ_CONS, lispm_make_shortnum(*--p), res);
+    res = lispm_cons_alloc(lispm_make_shortnum(*--p), res);
   return res;
 }
 
@@ -132,8 +134,8 @@ static Sym SPAN(Sym args) {
   len = !lispm_sym_is_nil(len) ? lispm_evquote(len)
                                : lispm_make_shortnum(lispm_shortnum_val(old_len) - lispm_shortnum_val(start));
   EVAL_CHECK(len <= old_len, LISPM_ERR_EVAL);
-  return lispm_st_obj_alloc3(LISPM_ST_OBJ_SPAN, page,
-                             lispm_make_shortnum(lispm_shortnum_val(offs) + lispm_shortnum_val(start)), len);
+  Sym arr[3] = {page, lispm_make_shortnum(lispm_shortnum_val(offs) + lispm_shortnum_val(start)), len};
+  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
 }
 static Sym PARSE(Sym a) {
   a = lispm_evquote(a);

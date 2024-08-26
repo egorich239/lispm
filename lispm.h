@@ -83,10 +83,13 @@ unsigned lispm_page_size(Sym pg, int elt_size_log2);
 
 Sym lispm_literal_name_span(Sym s);
 
-Sym lispm_st_obj_alloc2(unsigned k, Sym a, Sym b);
-void lispm_st_obj_unpack2(Sym s, Sym *a, Sym *b);
+Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
+static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
+  Sym cons[2] = {car, cdr};
+  return lispm_st_obj_alloc(LISPM_ST_OBJ_CONS, cons);
+}
 
-Sym lispm_st_obj_alloc3(unsigned k, Sym a, Sym b, Sym c);
+void lispm_st_obj_unpack2(Sym s, Sym *a, Sym *b);
 void lispm_st_obj_unpack3(Sym s, Sym *a, Sym *b, Sym *c);
 
 Sym lispm_alloc_cons(Sym car, Sym cdr);
