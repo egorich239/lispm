@@ -8,14 +8,14 @@
 #include "debug.h"
 #include "lispm.h"
 
-extern struct Builtin lispm_section_builtins;
+extern struct Builtin lispm_builtins[];
 
 Sym stack[4 * 1024 * 1024];
 char strings[16 * 1024 * 1024];
 unsigned htable[4 * 1024 * 1024];
 
 struct Lispm lispm = {
-    .builtins = &lispm_section_builtins,
+    .builtins = lispm_builtins,
 
     /*stack*/
     .stack = stack,
@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
   if (!page_begin) return 1;
 
   lispm.program = page_begin;
-  lispm.program_end =page_begin + stat.st_size;
+  lispm.program_end = page_begin + stat.st_size;
   lispm.pc = lispm.program;
 
   Sym result = lispm_exec();

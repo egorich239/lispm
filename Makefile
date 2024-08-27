@@ -1,9 +1,9 @@
-CFLAGS = -Wall -Werror -O0 -fomit-frame-pointer -gdwarf-2 -g3 -mtune=generic
+CFLAGS = -Wall -Werror -Oz -fomit-frame-pointer -gdwarf-2 -g3 -mtune=generic
 
 SRCS = $(wildcard *.c)
 OBJS = $(SRCS:%.c=%.o)
 
-CLEANFILES = $(OBJS) a.out launcher launcher.ld
+CLEANFILES = $(OBJS) a.out launcher
 	
 .PHONY:	all
 all:	launcher
@@ -13,12 +13,8 @@ clean:;	$(RM) $(CLEANFILES)
 
 $(OBJS): %.o: %.c
 
-launcher.ld: gen-launcherld
-	CC=$(CC) ./gen-launcherld $@
-
-
-launcher: launcher.o lrt0.o lispm.o rt-std.o debug.o launcher.ld
-	$(CC) $(CFLAGS) $(filter %.o,$^) -T $(filter %.ld,$^) -o $@
+launcher: launcher.o lrt0.o lispm.o rt-std.o debug.o lispm.ld
+	$(CC) $(CFLAGS) $(filter %.o,$^) -Wl,-T$(filter %.ld,$^) -o $@
 
 .PHONY: run
 run: launcher tests

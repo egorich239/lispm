@@ -42,7 +42,7 @@ static Sym gc(Sym root, unsigned high_mark) {
 }
 
 /* htable functions */
-#define LITERAL_NBUILTIN_BIT UPPER_BITS(1)
+#define LITERAL_NBUILTIN_BIT LISPM_UPPER_BITS(1)
 static inline unsigned hashf(const char *b, const char *e, unsigned seed) {
   unsigned hash = seed;
   while (b != e)
@@ -296,19 +296,10 @@ static Sym EQ(Sym a) {
   return cx[0] == cy[0] && cx[1] == cy[1];
 }
 
-static const struct Builtin LISPM_CORE_BUILTINS[] __attribute__((section(".lispm.rodata.builtins.core"), used)) = {
-    {"T"},
-    {"QUOTE", lispm_evquote, lispm_evcap_quote},
-    {"COND", lispm_evcon, lispm_evcap_con},
-    {"LAMBDA", lispm_evlambda, lispm_evcap_lambda},
-    {"LET", lispm_evlet, lispm_evcap_let},
-    {"ATOM", ATOM},
-    {"CONS", CONS},
-    {"CAR", CAR},
-    {"CDR", CDR},
-    {"EQ", EQ},
-    {"EVAL", EVAL},
-};
+static const struct Builtin *builtin(Sym s) {
+  LISPM_ASSERT(lispm_sym_is_builtin_fn(s));
+  return M.builtins + lispm_builtin_fn_ft_offs(s);
+}
 
 static Sym evcap0(Sym p, Sym c) {
   if (lispm_sym_is_shortnum(p)) return c; /* unsigned: no need to capture */
@@ -334,7 +325,8 @@ static Sym evcap0(Sym p, Sym c) {
   cons = lispm_cons_unpack_user(p), a = cons[0], t = cons[1];
   if (lispm_sym_is_literal(a) && lispm_literal_is_builtin(a)) {
     b = lispm_literal_get_assoc(a);
-    if (lispm_sym_is_special_form(b)) return LISPM_CORE_BUILTINS[lispm_builtin_fn_ft_offs(b)].evcap(t, c);
+    const struct Builtin *bi = builtin(b); /* special form */
+    if (bi->evcap) return (bi->evcap)(t, c);
   }
   while (!lispm_sym_is_nil(p)) {
     cons = lispm_cons_unpack_user(p), a = cons[0], p = cons[1];
@@ -370,11 +362,11 @@ static Sym evapply(Sym e) {
     f = eval0(f);
     eval_args = 1;
   }
-  if (lispm_sym_is_literal(f)) f = lispm_literal_get_assoc(f); /* resolve literal */
-  if (!lispm_sym_is_special_form(f)) eval_args = 1;
+  if (lispm_sym_is_literal(f)) f = lispm_literal_get_assoc(f);          /* resolve literal */
+  if (!lispm_sym_is_builtin_fn(f) || !builtin(f)->evcap) eval_args = 1; /* not a special form */
   if (eval_args) a = evlis(a);
 
-  if (lispm_sym_is_builtin_fn(f)) return LISPM_CORE_BUILTINS[lispm_builtin_fn_ft_offs(f)].eval(a);
+  if (lispm_sym_is_builtin_fn(f)) return builtin(f)->eval(a);
   LISPM_EVAL_CHECK(lispm_sym_is_lambda(f), LISPM_ERR_EVAL);
   Sym c, p, b, as, n, v, *la;
   la = lispm_st_obj_unpack(f), c = la[0], p = la[1], b = la[2];
@@ -416,7 +408,7 @@ static void lispm_main(void) {
     Sym s = ensure(n, n + __builtin_strlen(n));
     unsigned *entry = M.htable + lispm_literal_ht_offs(s);
     entry[0] &= ~LITERAL_NBUILTIN_BIT;
-    entry[1] = bi->eval ? (LISPM_MAKE_BUILTIN_FN(i) | (bi->evcap ? LISPM_SPECIAL_FORM_BIT : 0)) : LISPM_SYM_T + i;
+    entry[1] = bi->eval ? LISPM_MAKE_BUILTIN_FN(i) : LISPM_SYM_T + i;
   }
   Sym p = lispm_parse(M.pc);
   M.stack[1] = eval0(p);
@@ -429,3 +421,18 @@ Sym lispm_exec(void) {
   return M.stack[0] != LISPM_SYM_NIL ? M.stack[0]  /* lex/parse/eval error */
                                      : M.stack[1]; /* regular result */
 }
+
+static const struct Builtin LISPM_CORE_BUILTINS[]
+    __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
+        {"T"},
+        {"QUOTE", lispm_evquote, lispm_evcap_quote},
+        {"COND", lispm_evcon, lispm_evcap_con},
+        {"LAMBDA", lispm_evlambda, lispm_evcap_lambda},
+        {"LET", lispm_evlet, lispm_evcap_let},
+        {"ATOM", ATOM},
+        {"CONS", CONS},
+        {"CAR", CAR},
+        {"CDR", CDR},
+        {"EQ", EQ},
+        {"EVAL", EVAL},
+};
