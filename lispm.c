@@ -3,9 +3,10 @@
 #define M lispm
 
 /* error reporting */
-__attribute__((noreturn)) void lispm_report_error(Sym err) {
+__attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx) {
   LISPM_ASSERT(M.stack);
   M.stack[0] = err;
+  M.stack[1] = ctx;
   lispm_rt_throw();
 }
 
@@ -13,7 +14,7 @@ __attribute__((noreturn)) void lispm_report_error(Sym err) {
 Sym lispm_st_obj_alloc(unsigned k, Sym *vals) {
   const unsigned sz = lispm_st_obj_st_size(k);
   M.sp -= sz;
-  LISPM_EVAL_CHECK(M.pp < M.sp, LISPM_ERR_OOM);
+  LISPM_EVAL_CHECK(M.pp < M.sp, LISPM_ERR_OOM, "stack space exhausted; sp:", lispm_make_shortnum(M.sp - M.stack));
   Sym *sp = M.sp;
   sp[0] = vals[0], sp[1] = vals[1];
   if (sz == 3) sp[2] = vals[2];
@@ -64,11 +65,11 @@ static inline Sym lispm_literal_is_builtin(Sym s) {
 static inline Sym lispm_literal_get_assoc(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   const Sym a = M.htable[lispm_literal_ht_offs(s) + 1];
-  LISPM_EVAL_CHECK(a != LISPM_SYM_NO_ASSOC, LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(a != LISPM_SYM_NO_ASSOC, LISPM_ERR_EVAL, "unbound literal: ", s);
   return a;
 }
 static inline Sym lispm_literal_set_assoc(Sym s, Sym assoc) {
-  LISPM_EVAL_CHECK(!lispm_literal_is_builtin(s), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(!lispm_literal_is_builtin(s), LISPM_ERR_EVAL, "cannot bind to builtin: ", s);
   Sym *a = M.htable + (lispm_literal_ht_offs(s) + 1);
   const Sym old_assoc = *a;
   return *a = assoc, old_assoc;
@@ -82,10 +83,11 @@ static Sym ensure(const char *b, const char *e) {
     if (!*entry) goto ensure_insert; /* empty slot */
     if (str_eq(b, e, M.strings + (*entry & ~LITERAL_NBUILTIN_BIT))) return lispm_make_literal(2 * offset); /* found! */
   }
-  LISPM_EVAL_CHECK(0, LISPM_ERR_OOM);
+  LISPM_EVAL_CHECK(0, LISPM_ERR_OOM, "hash table exhausted, last insert position: ", lispm_make_shortnum(offset));
 
 ensure_insert:
-  LISPM_EVAL_CHECK(M.tp + (e - b + 1) <= M.strings_end, LISPM_ERR_OOM);
+  LISPM_EVAL_CHECK(M.tp + (e - b + 1) <= M.strings_end, LISPM_ERR_OOM,
+                   "strings table exhausted, tp: ", lispm_make_shortnum(M.tp - M.strings));
   entry[0] = (M.tp - M.strings) | LITERAL_NBUILTIN_BIT;
   entry[1] = LISPM_SYM_NO_ASSOC;
   while (b != e)
@@ -105,7 +107,9 @@ Sym lispm_builtin_as_sym(const struct Builtin *bi) { return LISPM_MAKE_BUILTIN_S
 /* Lexer produces atoms: literals, short numbers, full numbers.
    Apart from them lexer can also produce individual delimiters.
    Lexer can never produce a builtin symbol, since it is not a lexical category.
-   Hence we reuse the namespace of builtins to represent delimiters. */
+   Hence we reuse the namespace of builtins to represent delimiters.
+
+   TODO: allocate proper space for lexemes, for better error diagnostics */
 #define TOK_SYM(c) LISPM_MAKE_BUILTIN_SYM(((unsigned)(c)))
 #define TOK_LPAREN TOK_SYM('(')
 #define TOK_RPAREN TOK_SYM(')')
@@ -153,7 +157,7 @@ static Sym lex(void) {
   if (state == S_ATOM) goto lex_atom;
   if (state == S_NUM) goto lex_num;
 lex_fail:
-  LISPM_EVAL_CHECK(0, LISPM_ERR_LEX);
+  LISPM_EVAL_CHECK(0, LISPM_ERR_LEX, "lexer error at offset: ", lispm_make_shortnum(M.pc - M.program));
 lex_atom:
   return ensure(token_begin, M.pc);
 lex_num:
@@ -168,13 +172,14 @@ lex_num:
 static Sym LITERAL_QUOTE; /* initialized during builtin initialization */
 static Sym lispm_parse0(Sym tok) {
   if (lispm_sym_is_atom(tok)) return tok;
-  LISPM_EVAL_CHECK(tok == TOK_LPAREN || tok == TOK_QUOTE, LISPM_ERR_PARSE);
+  LISPM_EVAL_CHECK(tok == TOK_LPAREN || tok == TOK_QUOTE, LISPM_ERR_PARSE, "unexpected token: ", tok);
   Sym la = lex();
   if (tok == TOK_QUOTE) return lispm_cons_alloc(LITERAL_QUOTE, lispm_cons_alloc(lispm_parse0(la), LISPM_SYM_NIL));
   if (la == TOK_RPAREN) return LISPM_SYM_NIL;
   unsigned low_mark = M.pp - M.stack;
   while (la != TOK_RPAREN) {
-    LISPM_EVAL_CHECK(++M.pp < M.sp, LISPM_ERR_PARSE);
+    LISPM_EVAL_CHECK(++M.pp < M.sp, LISPM_ERR_PARSE,
+                     "stack exhausted during parsing, pp: ", lispm_make_shortnum(M.pp - M.stack));
     M.pp[-1] = lispm_parse0(la);
     la = lex();
   }
@@ -199,13 +204,13 @@ static Sym evcap0(Sym p, Sym c);
 
 Sym *lispm_cons_unpack_user(Sym a) {
   /* cons unpack on user input; soft failure mode */
-  LISPM_EVAL_CHECK(lispm_sym_is_cons(a), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_cons(a), LISPM_ERR_EVAL, "cons expected, got: ", a);
   return lispm_st_obj_unpack(a);
 }
 Sym lispm_evcap_quote(Sym a, Sym c) { return c; }
 Sym lispm_evquote(Sym a) {
   Sym *cons = lispm_cons_unpack_user(a);
-  LISPM_EVAL_CHECK(lispm_sym_is_nil(cons[1]), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_nil(cons[1]), LISPM_ERR_EVAL, "single-element list expected, got: ", a);
   return cons[0];
 }
 void lispm_args_unpack2(Sym a, Sym *f, Sym *s) {
@@ -230,7 +235,7 @@ static Sym lispm_evcon(Sym bs) {
     cons = lispm_cons_unpack_user(b);
     if (!lispm_sym_is_nil(eval0(cons[0]))) return eval0(lispm_evquote(cons[1]));
   }
-  LISPM_EVAL_CHECK(0, LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(0, LISPM_ERR_EVAL, "condtion branches exhausted", LISPM_SYM_NO_ASSOC);
 }
 static void lispm_restore_shadow(Sym s, Sym s0) {
   Sym *cons, a;
@@ -383,7 +388,7 @@ static Sym evapply(Sym e) {
   if (lispm_sym_is_literal(f)) f = lispm_literal_get_assoc(f); /* resolve literal */
 
   const struct Builtin *bi = 0;
-  LISPM_EVAL_CHECK(is_lambda_or_builtin_fn(f, &bi), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(is_lambda_or_builtin_fn(f, &bi), LISPM_ERR_EVAL, "a function expected, got: ", f);
   if (!bi || !bi->evcap) eval_args = 1; /* not a special form */
   if (eval_args) a = evlis(a);
 
@@ -404,7 +409,7 @@ static Sym evapply(Sym e) {
     cons = lispm_cons_unpack_user(a), v = cons[0], a = cons[1];
     s = lispm_cons_alloc(lispm_cons_alloc(n, lispm_literal_set_assoc(n, v)), s);
   }
-  LISPM_EVAL_CHECK(lispm_sym_is_nil(a), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_nil(a), LISPM_ERR_EVAL, "too many arguments for call: ", f);
   Sym res = eval0(b);
   return lispm_restore_shadow(s, LISPM_SYM_NIL), res;
 }
@@ -433,16 +438,15 @@ static void lispm_main(void) {
     entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     if (bi->store) *bi->store = s;
   }
-  Sym p = lispm_parse(M.pc, M.program_end);
-  M.stack[1] = eval0(p);
-  M.stack[0] = lispm_is_valid_result(M.stack[1]) ? LISPM_SYM_NIL : LISPM_ERR_EVAL;
+  Sym r = eval0(lispm_parse(M.pc, M.program_end));
+  LISPM_EVAL_CHECK(lispm_is_valid_result(r), LISPM_ERR_EVAL, "invalid result of evaluation: ", r);
+  M.stack[0] = r;
 }
 
 Sym lispm_exec(void) {
   LISPM_ASSERT(lispm_is_valid_config());
   lispm_rt_try(lispm_main);
-  return M.stack[0] != LISPM_SYM_NIL ? M.stack[0]  /* lex/parse/eval error */
-                                     : M.stack[1]; /* regular result */
+  return M.stack[0];
 }
 
 static const struct Builtin LISPM_CORE_BUILTINS[]

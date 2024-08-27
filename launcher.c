@@ -52,6 +52,11 @@ int main(int argc, char *argv[]) {
   lispm.pc = lispm.program;
 
   Sym result = lispm_exec();
-  fprintf(stderr, "%s\n", lispm_error_message_get());
-  lispm_dump(result);
+  if (lispm_sym_is_error(result)) {
+    fprintf(stderr, "%s", lispm_error_message_get());
+    lispm_print_short(lispm.stack[1]);
+    fprintf(stderr, "\n");
+  } else {
+    lispm_dump(result)
+  }
 }

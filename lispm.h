@@ -263,6 +263,10 @@ Sym lispm_builtin_as_sym(const struct Builtin *bi);
 #define LISPM_SYM_CAPTURED LISPM_MAKE_SPECIAL_VALUE(~0u - 1)
 #define LISPM_SYM_NO_ASSOC LISPM_MAKE_SPECIAL_VALUE(~0u - 0)
 
+static inline int lispm_sym_is_error(Sym s) {
+  return lispm_sym_is_special(s) && LISPM_ERR_OOM <= s && s <= LISPM_ERR_EVAL;
+}
+
 /* Internal API */
 static inline void lispm_error_message_set(const char *msg) {
   int i = 0;
@@ -271,23 +275,23 @@ static inline void lispm_error_message_set(const char *msg) {
 
 /* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
 #if !LISPM_CONFIG_VERBOSE
-#define LISPM_EVAL_CHECK(cond, err)                                                                                    \
+#define LISPM_EVAL_CHECK(cond, err, diag, ctx)                                                                         \
   do {                                                                                                                 \
-    if (!(cond)) lispm_report_error(err);                                                                              \
+    if (!(cond)) lispm_report_error(err, ctx);                                                                         \
   } while (0)
 #else
-#define LISPM_EVAL_CHECK(cond, err)                                                                                    \
+#define LISPM_EVAL_CHECK(cond, err, diag, ctx)                                                                         \
   do {                                                                                                                 \
     if (!(cond)) {                                                                                                     \
-      lispm_error_message_set("Failed assertion: " #cond);                                                             \
-      lispm_report_error(err);                                                                                         \
+      lispm_error_message_set("Failed assertion: " diag);                                                              \
+      lispm_report_error(err, ctx);                                                                                    \
     }                                                                                                                  \
   } while (0)
 #endif
-__attribute__((noreturn)) void lispm_report_error(Sym err);
+__attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx);
 
 /* pc must be between M.program and M.program_end page */
-Sym lispm_parse(const char *pc, const char* pc_end);
+Sym lispm_parse(const char *pc, const char *pc_end);
 
 Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
 static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
