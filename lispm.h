@@ -1,7 +1,7 @@
 #pragma once
 
 #define LISPM_CONFIG_ASSERT  1
-#define LISPM_CONFIG_VERBOSE 0
+#define LISPM_CONFIG_VERBOSE 1
 
 /* Abort is an external symbol provided by runtime */
 extern __attribute__((noreturn)) void lispm_rt_abort(void);
