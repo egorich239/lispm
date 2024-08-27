@@ -3,11 +3,7 @@
 
 #include <stdio.h>
 
-static const char *literal_name(Sym l) {
-  Sym pg, offs, p = lispm_literal_name_span(l), *addr;
-  addr = lispm_st_obj_unpack(p), pg = addr[0], offs = addr[1];
-  return lispm_page_loc(pg, lispm_shortnum_val(offs), 1);
-}
+static const char *literal_name(Sym l) { return lispm.strings + lispm_literal_str_offs(l); }
 
 void lispm_dump(Sym sym) {
   static int indent = 0;

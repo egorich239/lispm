@@ -2,17 +2,11 @@
 
 #define M lispm
 
-enum { PAGE_PROGRAM, PAGE_STRINGS };
-
 /* error reporting */
 __attribute__((noreturn)) void lispm_report_error(Sym err) {
   LISPM_ASSERT(M.stack);
   M.stack[0] = err;
   lispm_rt_throw();
-}
-void lispm_error_message_set(const char *msg) {
-  int i = 0;
-  while (i + 1 < LISPM_DIAG_SIZE && (M.strings[i++] = *msg++)) {}
 }
 
 /* stack functions */
@@ -25,10 +19,7 @@ Sym lispm_st_obj_alloc(unsigned k, Sym *vals) {
   if (sz == 3) sp[2] = vals[2];
   return lispm_make_st_obj(k, M.sp - M.stack);
 }
-Sym *lispm_st_obj_unpack(Sym s) {
-  const unsigned base = lispm_st_obj_st_offs(s);
-  return M.stack + base;
-}
+Sym *lispm_st_obj_unpack(Sym s) { return M.stack + lispm_st_obj_st_offs(s); }
 static Sym gc0(Sym s, unsigned high_mark, unsigned depth) {
   /* TODO: guarantee that gc0 over list (of atoms) is non-recursive */
   static Sym NILS[3] = {};
@@ -82,27 +73,19 @@ static inline Sym lispm_literal_set_assoc(Sym s, Sym assoc) {
   const Sym old_assoc = *a;
   return *a = assoc, old_assoc;
 }
-Sym lispm_literal_name_span(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_literal(s));
-  unsigned offs = M.htable[lispm_literal_ht_offs(s)] & ~LITERAL_NBUILTIN_BIT;
-  unsigned len = __builtin_strlen(M.strings + offs);
-  Sym arr[3] = {lispm_make_shortnum(PAGE_STRINGS), lispm_make_shortnum(offs), lispm_make_shortnum(len)};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
-}
-
 static Sym ensure(const char *b, const char *e) {
   unsigned offset = 5381;
-  int attempt = 0;
-  for (; attempt < STRINGS_INDEX_LOOKUP_LIMIT; ++attempt) {
+  unsigned *entry;
+  for (int attempt = 0; attempt < STRINGS_INDEX_LOOKUP_LIMIT; ++attempt) {
     offset = hashf(b, e, offset);
-    unsigned *entry = M.htable + (2 * offset);
-    if (!*entry) break; /* empty slot */
+    entry = M.htable + (2 * offset);
+    if (!*entry) goto ensure_insert; /* empty slot */
     if (str_eq(b, e, M.strings + (*entry & ~LITERAL_NBUILTIN_BIT))) return lispm_make_literal(2 * offset); /* found! */
   }
-  LISPM_EVAL_CHECK(attempt < STRINGS_INDEX_LOOKUP_LIMIT, LISPM_ERR_OOM);
-  LISPM_EVAL_CHECK(M.tp + (e - b + 1) <= M.strings_end, LISPM_ERR_OOM);
+  LISPM_EVAL_CHECK(0, LISPM_ERR_OOM);
 
-  unsigned *entry = M.htable + (2 * offset);
+ensure_insert:
+  LISPM_EVAL_CHECK(M.tp + (e - b + 1) <= M.strings_end, LISPM_ERR_OOM);
   entry[0] = (M.tp - M.strings) | LITERAL_NBUILTIN_BIT;
   entry[1] = LISPM_SYM_NO_ASSOC;
   while (b != e)
@@ -111,26 +94,6 @@ static Sym ensure(const char *b, const char *e) {
   while ((M.tp - M.strings) & 3)
     M.tp++;
   return lispm_make_literal(2 * offset);
-}
-
-/* pages */
-void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
-  LISPM_ASSERT(lispm_sym_is_shortnum(pg) && !(elt_size & (elt_size - 1)));
-  unsigned page = lispm_shortnum_val(pg), access;
-  void *ptr, *b, *e;
-  switch (page) {
-  case PAGE_PROGRAM:
-    b = (void *)M.program, e = (void *)M.program_end;
-    break;
-  case PAGE_STRINGS:
-    b = M.strings, e = M.strings_end;
-    break;
-  default:
-    lispm_rt_page(page, &b, &e, &access);
-  }
-  ptr = b + offs * elt_size;
-  LISPM_ASSERT(ptr < e);
-  return ptr;
 }
 
 /* lexer */
@@ -228,7 +191,7 @@ Sym *lispm_cons_unpack_user(Sym a) {
   return lispm_st_obj_unpack(a);
 }
 Sym lispm_evcap_quote(Sym a, Sym c) { return c; }
-inline Sym lispm_evquote(Sym a) {
+Sym lispm_evquote(Sym a) {
   Sym *cons = lispm_cons_unpack_user(a);
   LISPM_EVAL_CHECK(lispm_sym_is_nil(cons[1]), LISPM_ERR_EVAL);
   return cons[0];
@@ -315,6 +278,23 @@ static Sym lispm_evlet(Sym e) {
   return eval0(b);
 }
 static Sym EVAL(Sym e) { /* can be done in lisp, but let's not */ return eval0(lispm_evquote(e)); }
+static Sym CONS(Sym a) {
+  Sym x, y;
+  lispm_args_unpack2(a, &x, &y);
+  return lispm_cons_alloc(x, y);
+}
+static Sym CAR(Sym a) { return lispm_cons_unpack_user(lispm_evquote(a))[0]; }
+static Sym CDR(Sym a) { return lispm_cons_unpack_user(lispm_evquote(a))[1]; }
+static Sym ATOM(Sym a) { return lispm_sym_is_atom(lispm_evquote(a)) ? LISPM_SYM_T : LISPM_SYM_NIL; }
+static Sym EQ(Sym a) {
+  Sym x, y;
+  lispm_args_unpack2(a, &x, &y);
+  if (!lispm_sym_is_atom(x) || !lispm_sym_is_atom(y)) return LISPM_SYM_NIL;
+  if (x == y) return LISPM_SYM_T;
+  if (!lispm_sym_is_longnum(x) || !lispm_sym_is_longnum(y)) return LISPM_SYM_NIL;
+  Sym *cx = lispm_st_obj_unpack(x), *cy = lispm_st_obj_unpack(y);
+  return cx[0] == cy[0] && cx[1] == cy[1];
+}
 
 static const struct Builtin LISPM_CORE_BUILTINS[] __attribute__((section(".lispm.rodata.builtins.core"), used)) = {
     {"T"},
@@ -322,6 +302,11 @@ static const struct Builtin LISPM_CORE_BUILTINS[] __attribute__((section(".lispm
     {"COND", lispm_evcon, lispm_evcap_con},
     {"LAMBDA", lispm_evlambda, lispm_evcap_lambda},
     {"LET", lispm_evlet, lispm_evcap_let},
+    {"ATOM", ATOM},
+    {"CONS", CONS},
+    {"CAR", CAR},
+    {"CDR", CDR},
+    {"EQ", EQ},
     {"EVAL", EVAL},
 };
 
@@ -439,6 +424,7 @@ static void lispm_main(void) {
 }
 
 Sym lispm_exec(void) {
+  LISPM_ASSERT(lispm_is_valid_config());
   lispm_rt_try(lispm_main);
   return M.stack[0] != LISPM_SYM_NIL ? M.stack[0]  /* lex/parse/eval error */
                                      : M.stack[1]; /* regular result */

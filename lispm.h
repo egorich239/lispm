@@ -1,7 +1,7 @@
 #pragma once
 
-#define LISPM_CONFIG_ASSERT  1
-#define LISPM_CONFIG_VERBOSE 1
+#define LISPM_CONFIG_ASSERT  0
+#define LISPM_CONFIG_VERBOSE 0
 
 /* Abort is an external symbol provided by runtime */
 extern __attribute__((noreturn)) void lispm_rt_abort(void);
@@ -121,14 +121,6 @@ struct Lispm {
 #define LISPM_DIAG_SIZE 256u
 _Static_assert(LISPM_DIAG_SIZE > 0, "error message size must be non-zero");
 
-static inline int is_power_of_two(unsigned i) { return i && !(i & (i - 1)); }
-static inline int lispm_is_valid_config(struct Lispm *m) {
-  return m->stack + LISPM_PP_OFFSET <= m->pp && m->pp < m->sp              /**/
-         && m->strings + LISPM_DIAG_SIZE < m->tp && m->tp < m->strings_end /**/
-         && m->program <= m->pc && m->pc < m->program_end                  /**/
-         && m->htable + 1024 <= m->htable_end && is_power_of_two(m->htable_end - m->htable);
-}
-
 /* Hash table uses open addressing.
    This value limits how many slots are looked up before we give up. */
 #define STRINGS_INDEX_LOOKUP_LIMIT 32u
@@ -148,10 +140,17 @@ extern void lispm_rt_page(unsigned id, void **begin, void **end, unsigned *page_
 extern struct Lispm lispm;
 
 /* API */
+static inline int lispm_is_power_of_two(unsigned i) { return i && !(i & (i - 1)); }
+static inline int lispm_is_valid_config(void) {
+  const struct Lispm *m = &lispm;
+  return m->stack + LISPM_PP_OFFSET <= m->pp && m->pp < m->sp               /**/
+         && m->strings + LISPM_DIAG_SIZE <= m->tp && m->tp < m->strings_end /**/
+         && m->program <= m->pc && m->pc < m->program_end                   /**/
+         && m->htable + 1024 <= m->htable_end && lispm_is_power_of_two(m->htable_end - m->htable);
+}
 Sym lispm_exec(void);
 
 /* Sym API */
-
 #define UPPER_BITS(n) ~(~0u >> (n))
 
 /* nil */
@@ -163,6 +162,10 @@ static inline int lispm_sym_is_literal(Sym s) { return (s & 3u) == 0; }
 static inline unsigned lispm_literal_ht_offs(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   return s >> 2;
+}
+static inline unsigned lispm_literal_str_offs(Sym s) {
+  LISPM_ASSERT(lispm_sym_is_literal(s));
+  return lispm.htable[lispm_literal_ht_offs(s)] & ~UPPER_BITS(1); /* TODO: name these upper bits */
 }
 
 /* unsigneds */
@@ -256,6 +259,11 @@ static inline unsigned lispm_builtin_fn_ft_offs(Sym s) {
 #define LISPM_ERR_EVAL  LISPM_MAKE_SPECIAL_VALUE(~0u - 1028)
 
 /* Internal API */
+static inline void lispm_error_message_set(const char *msg) {
+  int i = 0;
+  while (i + 1 < LISPM_DIAG_SIZE && (lispm.strings[i++] = *msg++)) {}
+}
+
 /* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
 #if !LISPM_CONFIG_VERBOSE
 #define LISPM_EVAL_CHECK(cond, err)                                                                                    \
@@ -272,21 +280,10 @@ static inline unsigned lispm_builtin_fn_ft_offs(Sym s) {
   } while (0)
 #endif
 __attribute__((noreturn)) void lispm_report_error(Sym err);
-void lispm_error_message_set(const char *msg);
 
-/* pc must be from the PROGRAM page */
+/* pc must be between M.program and M.program_end page */
 Sym lispm_parse(const char *pc);
 
-void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size);
-static inline unsigned lispm_page_access(Sym pg) {
-  LISPM_ASSERT(lispm_sym_is_shortnum(pg));
-  const unsigned page = lispm_shortnum_val(pg);
-  void *b, *e;
-  unsigned access;
-  return page <= 1 ? 0 : (lispm_rt_page(page, &b, &e, &access), access);
-}
-
-Sym lispm_literal_name_span(Sym s);
 
 Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
 static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {

@@ -1,5 +1,6 @@
-(LET ((AB (QUOTE T))) ((QUOTE QUOTE) AB)) ===> T
+(CONS (QUOTE A) (QUOTE B)) ===> (A B !)
 (LET ((AB (QUOTE T))) (QUOTE AB)) ===> AB
+(LET ((AB (QUOTE T))) ((QUOTE QUOTE) AB)) ===> T
 
 (LET
     (

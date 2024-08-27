@@ -1,4 +1,28 @@
+#include "lrt0.h"
 #include "lispm.h"
+
+#define M lispm
+
+enum { PAGE_PROGRAM, PAGE_STRINGS };
+
+void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(pg) && !(elt_size & (elt_size - 1)));
+  unsigned page = lispm_shortnum_val(pg), access;
+  void *ptr, *b, *e;
+  switch (page) {
+  case PAGE_PROGRAM:
+    b = (void *)M.program, e = (void *)M.program_end;
+    break;
+  case PAGE_STRINGS:
+    b = M.strings, e = M.strings_end;
+    break;
+  default:
+    lispm_rt_page(page, &b, &e, &access);
+  }
+  ptr = b + offs * elt_size;
+  LISPM_ASSERT(ptr < e);
+  return ptr;
+}
 
 static unsigned num_decode(Sym s) {
   LISPM_EVAL_CHECK(lispm_sym_is_shortnum(s) || lispm_sym_is_longnum(s), LISPM_ERR_EVAL);
@@ -15,28 +39,12 @@ static Sym num_encode(unsigned e) {
                 lispm_make_shortnum(e & ((1u << LISPM_SHORTNUM_BITS) - 1))};
   return lispm_st_obj_alloc(LISPM_ST_OBJ_LONGNUM, arr);
 }
-
-static Sym CONS(Sym a) {
-  Sym x, y;
-  lispm_args_unpack2(a, &x, &y);
-  return lispm_cons_alloc(x, y);
-}
-static Sym CAR(Sym a) {
-  Sym *cons = lispm_cons_unpack_user(lispm_evquote(a));
-  return cons[0];
-}
-static Sym CDR(Sym a) {
-  Sym *cons = lispm_cons_unpack_user(lispm_evquote(a));
-  return cons[1];
-}
-static Sym ATOM(Sym a) { return lispm_sym_is_atom(lispm_evquote(a)) ? LISPM_SYM_T : LISPM_SYM_NIL; }
-static Sym EQ(Sym a) {
-  Sym x, y;
-  lispm_args_unpack2(a, &x, &y);
-  if (!lispm_sym_is_atom(x) || !lispm_sym_is_atom(y)) return LISPM_SYM_NIL;
-  if (x == y) return LISPM_SYM_T;
-  if (!lispm_sym_is_longnum(x) || !lispm_sym_is_longnum(y)) return LISPM_SYM_NIL;
-  return num_decode(x) == num_decode(y) ? LISPM_SYM_T : LISPM_SYM_NIL;
+static Sym lispm_literal_name_span(Sym s) {
+  LISPM_ASSERT(lispm_sym_is_literal(s));
+  unsigned offs = lispm_literal_str_offs(s);
+  unsigned len = __builtin_strlen(lispm.strings + offs);
+  Sym arr[3] = {lispm_make_shortnum(1), lispm_make_shortnum(offs), lispm_make_shortnum(len)};
+  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
 }
 
 static Sym PROGRAM(Sym e) {
@@ -142,11 +150,6 @@ static Sym PARSE(Sym a) {
 }
 
 LISPM_BUILTINS_EXT(LRT0) = {
-    {"CONS", CONS},
-    {"CAR", CAR},
-    {"CDR", CDR},
-    {"ATOM", ATOM},
-    {"EQ", EQ},
     {"PROGRAM", PROGRAM},
     {"STR", STR, lispm_evcap_quote},
     {"CHARS", CHARS},
