@@ -105,6 +105,7 @@ ensure_insert:
 #define TOK_SYM(c) LISPM_MAKE_BUILTIN_FN(((unsigned)(c)))
 #define TOK_LPAREN TOK_SYM('(')
 #define TOK_RPAREN TOK_SYM(')')
+#define TOK_QUOTE  TOK_SYM('\'')
 
 static Sym lex(void) {
   enum { S_ATOM, S_NUM, S_COMMENT, S_INIT } state = S_INIT;
@@ -160,15 +161,18 @@ lex_num:
 }
 
 /* parser */
+static Sym LITERAL_QUOTE; /* initialized during builtin initialization */
 static Sym lispm_parse0(Sym tok) {
   if (lispm_sym_is_atom(tok)) return tok;
-  LISPM_EVAL_CHECK(tok == TOK_LPAREN, LISPM_ERR_PARSE);
-  if ((tok = lex()) == TOK_RPAREN) return LISPM_SYM_NIL;
+  LISPM_EVAL_CHECK(tok == TOK_LPAREN || tok == TOK_QUOTE, LISPM_ERR_PARSE);
+  Sym la = lex();
+  if (tok == TOK_QUOTE) return lispm_cons_alloc(LITERAL_QUOTE, lispm_cons_alloc(lispm_parse0(la), LISPM_SYM_NIL));
+  if (la == TOK_RPAREN) return LISPM_SYM_NIL;
   unsigned low_mark = M.pp - M.stack;
-  while (tok != TOK_RPAREN) {
+  while (la != TOK_RPAREN) {
     LISPM_EVAL_CHECK(++M.pp < M.sp, LISPM_ERR_PARSE);
-    M.pp[-1] = lispm_parse0(tok);
-    tok = lex();
+    M.pp[-1] = lispm_parse0(la);
+    la = lex();
   }
   Sym res = lispm_cons_alloc(*--M.pp, LISPM_SYM_NIL);
   while (low_mark < (M.pp - M.stack))
@@ -409,6 +413,7 @@ static void lispm_main(void) {
     unsigned *entry = M.htable + lispm_literal_ht_offs(s);
     entry[0] &= ~LITERAL_NBUILTIN_BIT;
     entry[1] = bi->eval ? LISPM_MAKE_BUILTIN_FN(i) : LISPM_SYM_T + i;
+    if (bi->store) *bi->store = s;
   }
   Sym p = lispm_parse(M.pc);
   M.stack[1] = eval0(p);
@@ -425,7 +430,7 @@ Sym lispm_exec(void) {
 static const struct Builtin LISPM_CORE_BUILTINS[]
     __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
         {"t"},
-        {"quote", lispm_evquote, lispm_evcap_quote},
+        {"quote", lispm_evquote, lispm_evcap_quote, &LITERAL_QUOTE},
         {"cond", lispm_evcon, lispm_evcap_con},
         {"lambda", lispm_evlambda, lispm_evcap_lambda},
         {"let", lispm_evlet, lispm_evcap_let},

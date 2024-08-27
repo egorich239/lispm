@@ -1,7 +1,7 @@
 #pragma once
 
-#define LISPM_CONFIG_ASSERT  1
-#define LISPM_CONFIG_VERBOSE 1
+#define LISPM_CONFIG_ASSERT  0
+#define LISPM_CONFIG_VERBOSE 0
 
 /* Abort is an external symbol provided by runtime */
 extern __attribute__((noreturn)) void lispm_rt_abort(void);
@@ -76,6 +76,7 @@ struct __attribute__((aligned(16))) Builtin {
   const char *name;
   Sym (*eval)(Sym args);
   Sym (*evcap)(Sym args, Sym caps);
+  Sym *store; /* if non-NULL, the registered literal is stored into this location */
 };
 /* Convenience macro to implement extensions */
 #define LISPM_BUILTINS_EXT(name)                                                                                       \
