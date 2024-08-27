@@ -287,7 +287,7 @@ static inline void lispm_error_message_set(const char *msg) {
 __attribute__((noreturn)) void lispm_report_error(Sym err);
 
 /* pc must be between M.program and M.program_end page */
-Sym lispm_parse(const char *pc);
+Sym lispm_parse(const char *pc, const char* pc_end);
 
 Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
 static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {

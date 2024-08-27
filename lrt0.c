@@ -92,9 +92,10 @@ static Sym SPAN(Sym args) {
 static Sym PARSE(Sym a) {
   a = lispm_evquote(a);
   LISPM_EVAL_CHECK(lispm_sym_is_span(a), LISPM_ERR_EVAL);
-  Sym pg, offs, *addr;
-  addr = lispm_st_obj_unpack(a), pg = addr[0], offs = addr[1];
-  return lispm_parse(lispm_page_loc(pg, lispm_shortnum_val(offs), 1));
+  Sym pg, offs, len, *addr;
+  addr = lispm_st_obj_unpack(a), pg = addr[0], offs = addr[1], len = addr[2];
+  const char *pc = lispm_page_loc(pg, lispm_shortnum_val(offs), 1);
+  return lispm_parse(pc, pc + lispm_shortnum_val(len));
 }
 
 static unsigned num_decode(Sym s) {

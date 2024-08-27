@@ -183,10 +183,14 @@ static Sym lispm_parse0(Sym tok) {
     res = lispm_cons_alloc(*--M.pp, res);
   return res;
 }
-Sym lispm_parse(const char *pc) {
-  LISPM_ASSERT(M.program <= pc && pc < M.program_end);
+Sym lispm_parse(const char *pc, const char *pc_end) {
+  LISPM_ASSERT(M.program <= pc && pc <= pc_end && pc_end <= M.program_end);
+  const char *old_pc_end = M.program_end;
   M.pc = pc;
-  return lispm_parse0(lex());
+  M.program_end = pc_end;
+  Sym res = lispm_parse0(lex());
+  M.program_end = old_pc_end;
+  return res;
 }
 
 /* eval */
@@ -429,7 +433,7 @@ static void lispm_main(void) {
     entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     if (bi->store) *bi->store = s;
   }
-  Sym p = lispm_parse(M.pc);
+  Sym p = lispm_parse(M.pc, M.program_end);
   M.stack[1] = eval0(p);
   M.stack[0] = lispm_is_valid_result(M.stack[1]) ? LISPM_SYM_NIL : LISPM_ERR_EVAL;
 }
