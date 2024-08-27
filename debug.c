@@ -55,7 +55,7 @@ void lispm_print_short(Sym sym) {
   LISPM_ASSERT(lispm_sym_is_cons(sym));
   int counter = 3;
   fprintf(stderr, "(");
-  while (!lispm_sym_is_cons(sym)) {
+  while (lispm_sym_is_cons(sym)) {
     if (counter < 0) continue;
     if (counter == 0) {
       fprintf(stderr, " ...");
