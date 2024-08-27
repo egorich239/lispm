@@ -4,7 +4,7 @@ readonly D=$(mktemp -d)
 echo 'int main(){}' > $D/dummy.c
 $CC -Wl,-verbose $D/dummy.c 2>/dev/null | awk '/=====/{f=1-f;next}f' >$D/dummy.ld
 sed '/^\s*\.rodata\s*:\s*{.*}/a\
-    .rodata.lispm ALIGN(8) : {\
+    .rodata.lispm ALIGN(16) : {\
         lispm_section_builtins = .;\
         KEEP (lispm.o(.lispm.rodata.builtins.core))\
         KEEP (*(.lispm.rodata.builtins.ext))\
