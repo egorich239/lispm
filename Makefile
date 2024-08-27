@@ -3,7 +3,7 @@ CFLAGS = -Wall -Werror -O0 -fomit-frame-pointer -gdwarf-2 -g3 -mtune=generic
 SRCS = $(wildcard *.c)
 OBJS = $(SRCS:%.c=%.o)
 
-CLEANFILES = $(OBJS) a.out c root.tar launcher.ld
+CLEANFILES = $(OBJS) a.out launcher launcher.ld
 	
 .PHONY:	all
 all:	launcher

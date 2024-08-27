@@ -1,7 +1,6 @@
 #!/bin/bash
 
 readonly D=$(mktemp -d)
-echo $D
 echo 'int main(){}' > $D/dummy.c
 $CC -Wl,-verbose $D/dummy.c 2>/dev/null | awk '/=====/{f=1-f;next}f' >$D/dummy.ld
 sed '/^\s*\.rodata\s*:\s*{.*}/a\
