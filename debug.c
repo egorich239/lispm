@@ -56,6 +56,8 @@ void lispm_print_short(Sym sym) {
   int counter = 3;
   fprintf(stderr, "(");
   while (lispm_sym_is_cons(sym)) {
+    Sym *cons = lispm_st_obj_unpack(sym);
+    sym = cons[1];
     if (counter < 0) continue;
     if (counter == 0) {
       fprintf(stderr, " ...");
@@ -63,9 +65,7 @@ void lispm_print_short(Sym sym) {
       continue;
     }
     if (counter-- < 3) { fprintf(stderr, " "); }
-    Sym *cons = lispm_st_obj_unpack(sym);
     lispm_print_short(cons[0]);
-    sym = cons[1];
   }
   fprintf(stderr, lispm_sym_is_nil(sym) ? ")" : "]");
 }
