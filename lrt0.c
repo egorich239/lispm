@@ -3,6 +3,14 @@
 
 #define M lispm
 
+static Sym lispm_literal_name_span(Sym s) {
+  LISPM_ASSERT(lispm_sym_is_literal(s));
+  unsigned offs = lispm_literal_str_offs(s);
+  unsigned len = __builtin_strlen(lispm.strings + offs);
+  Sym arr[3] = {lispm_make_shortnum(1), lispm_make_shortnum(offs), lispm_make_shortnum(len)};
+  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
+}
+
 enum { PAGE_PROGRAM, PAGE_STRINGS };
 
 void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
@@ -22,29 +30,6 @@ void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
   ptr = b + offs * elt_size;
   LISPM_ASSERT(ptr < e);
   return ptr;
-}
-
-static unsigned num_decode(Sym s) {
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(s) || lispm_sym_is_longnum(s), LISPM_ERR_EVAL);
-  if (lispm_sym_is_shortnum(s)) return lispm_shortnum_val(s);
-
-  Sym hi, lo, *cons;
-  cons = lispm_st_obj_unpack(s), hi = cons[0], lo = cons[1];
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(lo), LISPM_ERR_EVAL);
-  return (lispm_shortnum_val(hi) << LISPM_SHORTNUM_BITS) | lispm_shortnum_val(lo);
-}
-static Sym num_encode(unsigned e) {
-  if (lispm_shortnum_can_represent(e)) return lispm_make_shortnum(e);
-  Sym arr[2] = {lispm_make_shortnum(e >> LISPM_SHORTNUM_BITS),
-                lispm_make_shortnum(e & ((1u << LISPM_SHORTNUM_BITS) - 1))};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_LONGNUM, arr);
-}
-static Sym lispm_literal_name_span(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_literal(s));
-  unsigned offs = lispm_literal_str_offs(s);
-  unsigned len = __builtin_strlen(lispm.strings + offs);
-  Sym arr[3] = {lispm_make_shortnum(1), lispm_make_shortnum(offs), lispm_make_shortnum(len)};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
 }
 
 static Sym PROGRAM(Sym e) {
@@ -90,43 +75,6 @@ static Sym CHARS(Sym a) {
     res = lispm_cons_alloc(lispm_make_shortnum(*--p), res);
   return res;
 }
-
-static Sym BAND(Sym a) {
-  Sym p, q;
-  lispm_args_unpack2(a, &p, &q);
-  return num_encode(num_decode(p) & num_decode(q));
-}
-static Sym BNOT(Sym a) {
-  a = lispm_evquote(a);
-  return num_encode(~num_decode(a));
-}
-static Sym ADD(Sym a) {
-  Sym p, q;
-  lispm_args_unpack2(a, &p, &q);
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
-  unsigned res;
-  int overflow = __builtin_uadd_overflow(num_decode(p), num_decode(q), &res);
-  LISPM_EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
-  return num_encode(res);
-}
-static Sym MUL(Sym a) {
-  Sym p, q;
-  lispm_args_unpack2(a, &p, &q);
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
-  unsigned res;
-  int overflow = __builtin_umul_overflow(num_decode(p), num_decode(q), &res);
-  LISPM_EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
-  return num_encode(res);
-}
-static Sym SUB(Sym a) {
-  Sym p, q;
-  lispm_args_unpack2(a, &p, &q);
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
-  unsigned res;
-  int overflow = __builtin_usub_overflow(num_decode(p), num_decode(q), &res);
-  LISPM_EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
-  return num_encode(res);
-}
 static Sym SPAN(Sym args) {
   Sym span, start, len, *cons, *addr;
   cons = lispm_cons_unpack_user(args), span = cons[0], start = cons[1];
@@ -149,6 +97,74 @@ static Sym PARSE(Sym a) {
   return lispm_parse(lispm_page_loc(pg, lispm_shortnum_val(offs), 1));
 }
 
+static unsigned num_decode(Sym s) {
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(s) || lispm_sym_is_longnum(s), LISPM_ERR_EVAL);
+  if (lispm_sym_is_shortnum(s)) return lispm_shortnum_val(s);
+
+  Sym hi, lo, *cons;
+  cons = lispm_st_obj_unpack(s), hi = cons[0], lo = cons[1];
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(lo), LISPM_ERR_EVAL);
+  return (lispm_shortnum_val(hi) << LISPM_SHORTNUM_BITS) | lispm_shortnum_val(lo);
+}
+static Sym num_encode(unsigned e) {
+  if (lispm_shortnum_can_represent(e)) return lispm_make_shortnum(e);
+  Sym arr[2] = {lispm_make_shortnum(e >> LISPM_SHORTNUM_BITS),
+                lispm_make_shortnum(e & ((1u << LISPM_SHORTNUM_BITS) - 1))};
+  return lispm_st_obj_alloc(LISPM_ST_OBJ_LONGNUM, arr);
+}
+
+static Sym BAND(Sym a) {
+  Sym p, q;
+  lispm_args_unpack2(a, &p, &q);
+  return num_encode(num_decode(p) & num_decode(q));
+}
+static Sym BOR(Sym a) {
+  Sym p, q;
+  lispm_args_unpack2(a, &p, &q);
+  return num_encode(num_decode(p) | num_decode(q));
+}
+static Sym BXOR(Sym a) {
+  Sym p, q;
+  lispm_args_unpack2(a, &p, &q);
+  return num_encode(num_decode(p) ^ num_decode(q));
+}
+static Sym BNOT(Sym a) {
+  a = lispm_evquote(a);
+  return num_encode(~num_decode(a));
+}
+
+LISPM_BUILTINS_EXT(LRT0_SYMS) = {{"MODULO"}};
+
+static int arith_unpack(Sym a, unsigned *p, unsigned *q) {
+  Sym *pq = lispm_cons_unpack_user(a);
+  Sym *qm = lispm_cons_unpack_user(pq[1]);
+  *p = num_decode(pq[0]), *q = num_decode(qm[0]);
+  if (lispm_sym_is_nil(qm[1])) return 0;
+  LISPM_EVAL_CHECK(lispm_evquote(qm[1]) == lispm_builtin_as_sym(LRT0_SYMS), LISPM_ERR_EVAL);
+  return 1;
+}
+static Sym ADD(Sym a) {
+  unsigned p, q, r;
+  int is_modulo = arith_unpack(a, &p, &q);
+  int overflow = __builtin_uadd_overflow(p, q, &r);
+  LISPM_EVAL_CHECK(is_modulo || !overflow, LISPM_ERR_EVAL);
+  return num_encode(r);
+}
+static Sym MUL(Sym a) {
+  unsigned p, q, r;
+  int is_modulo = arith_unpack(a, &p, &q);
+  int overflow = __builtin_umul_overflow(p, q, &r);
+  LISPM_EVAL_CHECK(is_modulo || !overflow, LISPM_ERR_EVAL);
+  return num_encode(r);
+}
+static Sym SUB(Sym a) {
+  unsigned p, q, r;
+  int is_modulo = arith_unpack(a, &p, &q);
+  int overflow = __builtin_usub_overflow(p, q, &r);
+  LISPM_EVAL_CHECK(is_modulo || !overflow, LISPM_ERR_EVAL);
+  return num_encode(r);
+}
+
 LISPM_BUILTINS_EXT(LRT0) = {
     {"program", PROGRAM},
     {"span", SPAN},
@@ -157,9 +173,11 @@ LISPM_BUILTINS_EXT(LRT0) = {
     {"chars", CHARS},
     {"getc", GETC},
     {"copy", COPY},
-    {"add", ADD},
-    {"mul", MUL},
-    {"sub", SUB},
-    {"band", BAND},
-    {"bnot", BNOT},
+    {"+", ADD},
+    {"*", MUL},
+    {"-", SUB},
+    {"bitwise-and", BAND},
+    {"bitwise-or", BOR},
+    {"bitwise-xor", BXOR},
+    {"bitwise-not", BNOT},
 };

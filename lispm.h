@@ -1,7 +1,7 @@
 #pragma once
 
-#define LISPM_CONFIG_ASSERT  0
-#define LISPM_CONFIG_VERBOSE 0
+#define LISPM_CONFIG_ASSERT  1
+#define LISPM_CONFIG_VERBOSE 1
 
 /* Abort is an external symbol provided by runtime */
 extern __attribute__((noreturn)) void lispm_rt_abort(void);
@@ -240,28 +240,28 @@ static inline int lispm_sym_is_span(Sym s) { return lispm_st_obj_kind(s) == LISP
 static inline int lispm_sym_is_special(Sym s) { return (s & 3u) == 3u; }
 
 /* builtin functions */
-#define LISPM_MAKE_BUILTIN_FN(ft_offs) (((ft_offs) << 4) | 3u)
-static inline int lispm_sym_is_builtin_fn(Sym s) { return (s & 15u) == 3u; }
-static inline unsigned lispm_builtin_fn_ft_offs(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_builtin_fn(s));
+#define LISPM_MAKE_BUILTIN_SYM(ft_offs) (((ft_offs) << 4) | 3u)
+static inline int lispm_sym_is_builtin_sym(Sym s) { return (s & 15u) == 3u; }
+static inline unsigned lispm_builtin_sym_offs(Sym s) {
+  LISPM_ASSERT(lispm_sym_is_builtin_sym(s));
   return s >> 4;
 }
+Sym lispm_builtin_as_sym(const struct Builtin *bi);
 
 /* special values */
 #define LISPM_MAKE_SPECIAL_VALUE(val) (((val) << 4) | 15u)
 
-#define LISPM_SYM_NIL      0u
-#define LISPM_SYM_T        LISPM_MAKE_SPECIAL_VALUE(0)
-#define LISPM_SYM_PROGRAM  LISPM_MAKE_SPECIAL_VALUE(1)
+#define LISPM_SYM_NIL 0u
+#define LISPM_SYM_T   LISPM_MAKE_BUILTIN_SYM(0)
+
+#define LISPM_ERR_OOM   LISPM_MAKE_SPECIAL_VALUE(1024 + 0)
+#define LISPM_ERR_LEX   LISPM_MAKE_SPECIAL_VALUE(1024 + 1)
+#define LISPM_ERR_PARSE LISPM_MAKE_SPECIAL_VALUE(1024 + 2)
+#define LISPM_ERR_EVAL  LISPM_MAKE_SPECIAL_VALUE(1024 + 3)
+
 #define LISPM_SYM_BINDING  LISPM_MAKE_SPECIAL_VALUE(~0u - 2)
 #define LISPM_SYM_CAPTURED LISPM_MAKE_SPECIAL_VALUE(~0u - 1)
 #define LISPM_SYM_NO_ASSOC LISPM_MAKE_SPECIAL_VALUE(~0u - 0)
-
-#define LISPM_ERR_INIT  LISPM_MAKE_SPECIAL_VALUE(~0u - 1024)
-#define LISPM_ERR_OOM   LISPM_MAKE_SPECIAL_VALUE(~0u - 1025)
-#define LISPM_ERR_LEX   LISPM_MAKE_SPECIAL_VALUE(~0u - 1026)
-#define LISPM_ERR_PARSE LISPM_MAKE_SPECIAL_VALUE(~0u - 1027)
-#define LISPM_ERR_EVAL  LISPM_MAKE_SPECIAL_VALUE(~0u - 1028)
 
 /* Internal API */
 static inline void lispm_error_message_set(const char *msg) {

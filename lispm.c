@@ -96,13 +96,17 @@ ensure_insert:
   return lispm_make_literal(2 * offset);
 }
 
+/* builtins support */
+Sym lispm_builtin_as_sym(const struct Builtin *bi) { return LISPM_MAKE_BUILTIN_SYM(bi - lispm.builtins); }
+
 /* lexer */
 #include "lexer.inc.h"
 
-/* Special "symbol" values returned by lexer.
-   We utilize the same namespace as builtin functions,
-   because lexer never produces special symbols. */
-#define TOK_SYM(c) LISPM_MAKE_BUILTIN_FN(((unsigned)(c)))
+/* Lexer produces atoms: literals, short numbers, full numbers.
+   Apart from them lexer can also produce individual delimiters.
+   Lexer can never produce a builtin symbol, since it is not a lexical category.
+   Hence we reuse the namespace of builtins to represent delimiters. */
+#define TOK_SYM(c) LISPM_MAKE_BUILTIN_SYM(((unsigned)(c)))
 #define TOK_LPAREN TOK_SYM('(')
 #define TOK_RPAREN TOK_SYM(')')
 #define TOK_QUOTE  TOK_SYM('\'')
@@ -301,8 +305,8 @@ static Sym EQ(Sym a) {
 }
 
 static const struct Builtin *builtin(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_builtin_fn(s));
-  return M.builtins + lispm_builtin_fn_ft_offs(s);
+  LISPM_ASSERT(lispm_sym_is_builtin_sym(s));
+  return M.builtins + lispm_builtin_sym_offs(s);
 }
 
 static Sym evcap0(Sym p, Sym c) {
@@ -329,8 +333,8 @@ static Sym evcap0(Sym p, Sym c) {
   cons = lispm_cons_unpack_user(p), a = cons[0], t = cons[1];
   if (lispm_sym_is_literal(a) && lispm_literal_is_builtin(a)) {
     b = lispm_literal_get_assoc(a);
-    const struct Builtin *bi = builtin(b); /* special form */
-    if (bi->evcap) return (bi->evcap)(t, c);
+    const struct Builtin *bi = builtin(b);
+    if (bi->evcap) return (bi->evcap)(t, c); /* special form */
   }
   while (!lispm_sym_is_nil(p)) {
     cons = lispm_cons_unpack_user(p), a = cons[0], p = cons[1];
@@ -358,6 +362,12 @@ static Sym evlis(Sym e) {
   }
   return reverse_inplace(res);
 }
+static int is_lambda_or_builtin_fn(Sym f, const struct Builtin **bi) {
+  if (lispm_sym_is_lambda(f)) return 1;
+  if (!lispm_sym_is_builtin_sym(f)) return 0;
+  *bi = builtin(f);
+  return (*bi)->eval != 0;
+}
 static Sym evapply(Sym e) {
   Sym f, a, *cons;
   cons = lispm_cons_unpack_user(e), f = cons[0], a = cons[1];
@@ -366,12 +376,16 @@ static Sym evapply(Sym e) {
     f = eval0(f);
     eval_args = 1;
   }
-  if (lispm_sym_is_literal(f)) f = lispm_literal_get_assoc(f);          /* resolve literal */
-  if (!lispm_sym_is_builtin_fn(f) || !builtin(f)->evcap) eval_args = 1; /* not a special form */
+  if (lispm_sym_is_literal(f)) f = lispm_literal_get_assoc(f); /* resolve literal */
+
+  const struct Builtin *bi = 0;
+  LISPM_EVAL_CHECK(is_lambda_or_builtin_fn(f, &bi), LISPM_ERR_EVAL);
+  if (!bi || !bi->evcap) eval_args = 1; /* not a special form */
   if (eval_args) a = evlis(a);
 
-  if (lispm_sym_is_builtin_fn(f)) return builtin(f)->eval(a);
-  LISPM_EVAL_CHECK(lispm_sym_is_lambda(f), LISPM_ERR_EVAL);
+  if (bi) return bi->eval(a);
+
+  LISPM_ASSERT(lispm_sym_is_lambda(f));
   Sym c, p, b, as, n, v, *la;
   la = lispm_st_obj_unpack(f), c = la[0], p = la[1], b = la[2];
   Sym s = LISPM_SYM_NIL;
@@ -412,7 +426,7 @@ static void lispm_main(void) {
     Sym s = ensure(n, n + __builtin_strlen(n));
     unsigned *entry = M.htable + lispm_literal_ht_offs(s);
     entry[0] &= ~LITERAL_NBUILTIN_BIT;
-    entry[1] = bi->eval ? LISPM_MAKE_BUILTIN_FN(i) : LISPM_SYM_T + i;
+    entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     if (bi->store) *bi->store = s;
   }
   Sym p = lispm_parse(M.pc);

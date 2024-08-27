@@ -22,6 +22,10 @@ void lispm_dump(Sym sym) {
     fprintf(stderr, "T\n");
   } else if (lispm_sym_is_shortnum(sym)) {
     fprintf(stderr, "%u\n", lispm_shortnum_val(sym));
+  } else if (lispm_sym_is_longnum(sym)) {
+    Sym *hilo = lispm_st_obj_unpack(sym);
+    unsigned val = (lispm_shortnum_val(hilo[0]) << LISPM_SHORTNUM_BITS) | lispm_shortnum_val(hilo[1]);
+    fprintf(stderr, "%u\n", val);
   } else if (lispm_sym_is_literal(sym)) {
     fprintf(stderr, "%s\n", literal_name(sym));
   } else if (lispm_sym_is_special(sym)) {
