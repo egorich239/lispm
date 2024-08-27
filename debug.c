@@ -1,20 +1,19 @@
 #include "debug.h"
 #include "lispm.h"
-#include "sym.h"
 
 #include <stdio.h>
 
 static const char *literal_name(Sym l) {
-  Sym pg, offs, len, p = lispm_literal_name_span(l);
-  lispm_st_obj_unpack3(p, &pg, &offs, &len);
+  Sym pg, offs, p = lispm_literal_name_span(l), *addr;
+  addr = lispm_st_obj_unpack(p), pg = addr[0], offs = addr[1];
   return lispm_page_loc(pg, lispm_shortnum_val(offs), 1);
 }
 
-void lispm_dump(const struct PageDesc *table, Sym sym) {
+void lispm_dump(Sym sym) {
   static int indent = 0;
   static int same_line = 0;
 
-  const unsigned *stack = table[lispm_page_pt_offs(LISPM_PAGE_STACK)].begin;
+  const unsigned *stack = lispm.stack;
 
   if (!same_line)
     for (int i = 0; i < indent; ++i)
@@ -38,9 +37,9 @@ void lispm_dump(const struct PageDesc *table, Sym sym) {
     while (lispm_sym_is_cons(sym)) {
       Sym car = stack[lispm_st_obj_st_offs(sym)];
       sym = stack[lispm_st_obj_st_offs(sym) + 1];
-      lispm_dump(table, car);
+      lispm_dump(car);
     }
-    if (sym != LISPM_SYM_NIL) lispm_dump(table, sym);
+    if (sym != LISPM_SYM_NIL) lispm_dump(sym);
 
     indent -= 2;
     for (int i = 0; i < indent; ++i)
@@ -51,9 +50,9 @@ void lispm_dump(const struct PageDesc *table, Sym sym) {
     Sym cap = stack[offs], par = stack[offs + 1], body = stack[offs + 2];
     fprintf(stderr, "(LAMBDA\n");
     indent += 2;
-    lispm_dump(table, par);
-    lispm_dump(table, body);
-    lispm_dump(table, cap);
+    lispm_dump(par);
+    lispm_dump(body);
+    lispm_dump(cap);
     indent -= 2;
     for (int i = 0; i < indent; ++i)
       fprintf(stderr, " ");
@@ -61,6 +60,4 @@ void lispm_dump(const struct PageDesc *table, Sym sym) {
   }
 }
 
-const char *lispm_error_message_get(const struct PageDesc *table) {
-  return table[lispm_page_pt_offs(LISPM_PAGE_STRINGS)].begin;
-}
+const char *lispm_error_message_get(void) { return lispm.strings; }

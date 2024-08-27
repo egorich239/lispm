@@ -1,13 +1,12 @@
 #include "lispm.h"
-#include "sym.h"
 
 static unsigned num_decode(Sym s) {
-  EVAL_CHECK(lispm_sym_is_shortnum(s) || lispm_sym_is_longnum(s), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(s) || lispm_sym_is_longnum(s), LISPM_ERR_EVAL);
   if (lispm_sym_is_shortnum(s)) return lispm_shortnum_val(s);
 
-  Sym hi, lo;
-  lispm_st_obj_unpack2(s, &hi, &lo);
-  EVAL_CHECK(lispm_sym_is_shortnum(lo), LISPM_ERR_EVAL);
+  Sym hi, lo, *cons;
+  cons = lispm_st_obj_unpack(s), hi = cons[0], lo = cons[1];
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(lo), LISPM_ERR_EVAL);
   return (lispm_shortnum_val(hi) << LISPM_SHORTNUM_BITS) | lispm_shortnum_val(lo);
 }
 static Sym num_encode(unsigned e) {
@@ -23,14 +22,12 @@ static Sym CONS(Sym a) {
   return lispm_cons_alloc(x, y);
 }
 static Sym CAR(Sym a) {
-  Sym car, cdr;
-  lispm_cons_unpack_user(lispm_evquote(a), &car, &cdr);
-  return car;
+  Sym *cons = lispm_cons_unpack_user(lispm_evquote(a));
+  return cons[0];
 }
 static Sym CDR(Sym a) {
-  Sym car, cdr;
-  lispm_cons_unpack_user(lispm_evquote(a), &car, &cdr);
-  return cdr;
+  Sym *cons = lispm_cons_unpack_user(lispm_evquote(a));
+  return cons[1];
 }
 static Sym ATOM(Sym a) { return lispm_sym_is_atom(lispm_evquote(a)) ? LISPM_SYM_T : LISPM_SYM_NIL; }
 static Sym EQ(Sym a) {
@@ -43,26 +40,25 @@ static Sym EQ(Sym a) {
 }
 
 static Sym PROGRAM(Sym e) {
-  EVAL_CHECK(lispm_sym_is_nil(e), LISPM_ERR_EVAL);
-  Sym arr[3] = {LISPM_PAGE_PROGRAM, lispm_make_shortnum(0),
-                lispm_make_shortnum(lispm_page_size(LISPM_PAGE_PROGRAM, 0))};
+  LISPM_EVAL_CHECK(lispm_sym_is_nil(e), LISPM_ERR_EVAL);
+  Sym arr[3] = {lispm_make_shortnum(0), lispm_make_shortnum(0), lispm_make_shortnum(lispm.program_end - lispm.program)};
   return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
 }
 static Sym GETC(Sym a) {
-  Sym page, offs, len, ptr = lispm_evquote(a);
-  EVAL_CHECK(lispm_sym_is_span(ptr), LISPM_ERR_EVAL);
-  lispm_st_obj_unpack3(ptr, &page, &offs, &len);
-  if (!lispm_shortnum_val(len)) return lispm_shortnum_val(0); /* position right after the interval */
-  return lispm_make_shortnum(*(unsigned char *)lispm_page_loc(page, lispm_shortnum_val(offs), 1));
+  Sym ptr = lispm_evquote(a);
+  LISPM_EVAL_CHECK(lispm_sym_is_span(ptr), LISPM_ERR_EVAL);
+  Sym *addr = lispm_st_obj_unpack(ptr);
+  if (!lispm_shortnum_val(addr[2])) return lispm_shortnum_val(0); /* position right after the interval */
+  return lispm_make_shortnum(*(unsigned char *)lispm_page_loc(addr[0], lispm_shortnum_val(addr[1]), 1));
 }
+
 static Sym COPY(Sym a) {
-  Sym dest, src, dest_offs, src_offs, dest_len, src_len;
+  Sym dest, src, dest_offs, src_offs, dest_len, src_len, *addr;
   lispm_args_unpack2(a, &dest, &src);
-  EVAL_CHECK(lispm_sym_is_span(dest) && lispm_sym_is_span(src), LISPM_ERR_EVAL);
-  lispm_st_obj_unpack3(dest, &dest, &dest_offs, &dest_len);
-  lispm_st_obj_unpack3(src, &src, &src_offs, &src_len);
-  struct PageDesc *dest_page = lispm_page_desc(dest);
-  EVAL_CHECK(dest_page->flags == PAGE_FLAG_RW, LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_span(dest) && lispm_sym_is_span(src), LISPM_ERR_EVAL);
+  addr = lispm_st_obj_unpack(dest), dest = addr[0], dest_offs = addr[1], dest_len = addr[2];
+  addr = lispm_st_obj_unpack(src), src = addr[0], src_offs = addr[1], src_len = addr[2];
+  LISPM_EVAL_CHECK(lispm_page_access(dest) & PAGE_ACCESS_W, LISPM_ERR_EVAL);
   if (src_len < dest_len) dest_len = src_len;
   __builtin_memcpy(lispm_page_loc(dest, lispm_shortnum_val(dest_offs), 1),
                    lispm_page_loc(src, lispm_shortnum_val(src_offs), 1), lispm_shortnum_val(dest_len));
@@ -70,14 +66,14 @@ static Sym COPY(Sym a) {
 }
 static Sym STR(Sym e) {
   e = lispm_evquote(e);
-  EVAL_CHECK(lispm_sym_is_literal(e), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_literal(e), LISPM_ERR_EVAL);
   return lispm_literal_name_span(e);
 }
 static Sym CHARS(Sym a) {
   a = lispm_evquote(a);
-  Sym pg, offs, len;
-  EVAL_CHECK(lispm_sym_is_span(a), LISPM_ERR_EVAL);
-  lispm_st_obj_unpack3(a, &pg, &offs, &len);
+  Sym pg, offs, len, *addr;
+  LISPM_EVAL_CHECK(lispm_sym_is_span(a), LISPM_ERR_EVAL);
+  addr = lispm_st_obj_unpack(a), pg = addr[0], offs = addr[1], len = addr[2];
   const unsigned char *p = lispm_page_loc(pg, lispm_shortnum_val(offs), 1);
   unsigned l = lispm_shortnum_val(len);
   p += l;
@@ -99,53 +95,53 @@ static Sym BNOT(Sym a) {
 static Sym ADD(Sym a) {
   Sym p, q;
   lispm_args_unpack2(a, &p, &q);
-  EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
   unsigned res;
   int overflow = __builtin_uadd_overflow(num_decode(p), num_decode(q), &res);
-  EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
   return num_encode(res);
 }
 static Sym MUL(Sym a) {
   Sym p, q;
   lispm_args_unpack2(a, &p, &q);
-  EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
   unsigned res;
   int overflow = __builtin_umul_overflow(num_decode(p), num_decode(q), &res);
-  EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
   return num_encode(res);
 }
 static Sym SUB(Sym a) {
   Sym p, q;
   lispm_args_unpack2(a, &p, &q);
-  EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL);
   unsigned res;
   int overflow = __builtin_usub_overflow(num_decode(p), num_decode(q), &res);
-  EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(!overflow, LISPM_ERR_EVAL);
   return num_encode(res);
 }
 static Sym SPAN(Sym args) {
-  Sym span, start, len;
-  lispm_cons_unpack_user(args, &span, &start);
-  lispm_cons_unpack_user(start, &start, &len);
-  EVAL_CHECK(lispm_sym_is_span(span), LISPM_ERR_EVAL);
+  Sym span, start, len, *cons, *addr;
+  cons = lispm_cons_unpack_user(args), span = cons[0], start = cons[1];
+  cons = lispm_cons_unpack_user(start), start = cons[0], len = cons[1];
+  LISPM_EVAL_CHECK(lispm_sym_is_span(span), LISPM_ERR_EVAL);
   Sym page, offs, old_len;
-  lispm_st_obj_unpack3(span, &page, &offs, &old_len);
-  EVAL_CHECK(start <= old_len, LISPM_ERR_EVAL);
+  addr = lispm_st_obj_unpack(span), page = addr[0], offs = addr[1], old_len = addr[2];
+  LISPM_EVAL_CHECK(start <= old_len, LISPM_ERR_EVAL);
   len = !lispm_sym_is_nil(len) ? lispm_evquote(len)
                                : lispm_make_shortnum(lispm_shortnum_val(old_len) - lispm_shortnum_val(start));
-  EVAL_CHECK(len <= old_len, LISPM_ERR_EVAL);
+  LISPM_EVAL_CHECK(len <= old_len, LISPM_ERR_EVAL);
   Sym arr[3] = {page, lispm_make_shortnum(lispm_shortnum_val(offs) + lispm_shortnum_val(start)), len};
   return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
 }
 static Sym PARSE(Sym a) {
   a = lispm_evquote(a);
-  EVAL_CHECK(lispm_sym_is_span(a), LISPM_ERR_EVAL);
-  Sym pg, offs, len;
-  lispm_st_obj_unpack3(a, &pg, &offs, &len);
+  LISPM_EVAL_CHECK(lispm_sym_is_span(a), LISPM_ERR_EVAL);
+  Sym pg, offs, *addr;
+  addr = lispm_st_obj_unpack(a), pg = addr[0], offs = addr[1];
   return lispm_parse(lispm_page_loc(pg, lispm_shortnum_val(offs), 1));
 }
 
-struct Builtin LRT0[] = {
+LISPM_BUILTINS_EXT(LRT0) = {
     {"CONS", CONS},
     {"CAR", CAR},
     {"CDR", CDR},
@@ -163,5 +159,4 @@ struct Builtin LRT0[] = {
     {"BAND", BAND},
     {"BNOT", BNOT},
     {"PARSE", PARSE},
-    {},
 };

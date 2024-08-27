@@ -1,0 +1,13 @@
+#!/bin/bash
+
+readonly D=$(mktemp -d)
+echo $D
+echo 'int main(){}' > $D/dummy.c
+$CC -Wl,-verbose $D/dummy.c 2>/dev/null | awk '/=====/{f=1-f;next}f' >$D/dummy.ld
+sed '/^\s*\.rodata\s*:\s*{.*}/a\
+    .rodata.lispm ALIGN(8) : {\
+        lispm_section_builtins = .;\
+        KEEP (lispm.o(.lispm.rodata.builtins.core))\
+        KEEP (*(.lispm.rodata.builtins.ext))\
+        . += 32;\
+    } = 0' <$D/dummy.ld >$1
