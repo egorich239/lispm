@@ -57,6 +57,6 @@ int main(int argc, char *argv[]) {
     lispm_print_short(lispm.stack[1]);
     fprintf(stderr, "\n");
   } else {
-    lispm_dump(result)
+    lispm_dump(result);
   }
 }
