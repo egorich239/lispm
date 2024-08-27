@@ -424,15 +424,15 @@ Sym lispm_exec(void) {
 
 static const struct Builtin LISPM_CORE_BUILTINS[]
     __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
-        {"T"},
-        {"QUOTE", lispm_evquote, lispm_evcap_quote},
-        {"COND", lispm_evcon, lispm_evcap_con},
-        {"LAMBDA", lispm_evlambda, lispm_evcap_lambda},
-        {"LET", lispm_evlet, lispm_evcap_let},
-        {"ATOM", ATOM},
-        {"CONS", CONS},
-        {"CAR", CAR},
-        {"CDR", CDR},
-        {"EQ", EQ},
-        {"EVAL", EVAL},
+        {"t"},
+        {"quote", lispm_evquote, lispm_evcap_quote},
+        {"cond", lispm_evcon, lispm_evcap_con},
+        {"lambda", lispm_evlambda, lispm_evcap_lambda},
+        {"let", lispm_evlet, lispm_evcap_let},
+        {"atom", ATOM},
+        {"cons", CONS},
+        {"car", CAR},
+        {"cdr", CDR},
+        {"eq", EQ},
+        {"eval", EVAL},
 };

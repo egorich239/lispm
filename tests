@@ -1,14 +1,14 @@
-(CONS (QUOTE A) (QUOTE B)) ===> (A B !)
-(LET ((AB (QUOTE T))) (QUOTE AB)) ===> AB
-(LET ((AB (QUOTE T))) ((QUOTE QUOTE) AB)) ===> T
+(let ((AB (quote T))) ((quote quote) AB)) ===> T
+(let ((AB (quote T))) (quote AB)) ===> AB
+(cons (quote A) (quote B)) ===> (A B !)
 
-(LET
+(let
     (
-        (y (QUOTE C))
-        (s (LAMBDA (x) (LAMBDA (y) (CONS x y))))
-        (sa (s (QUOTE A)))
-        (sb (s (QUOTE B)))
-        (sd (s (QUOTE D)))
+        (y (quote C))
+        (s (lambda (x) (lambda (y) (cons x y))))
+        (sa (s (quote A)))
+        (sb (s (quote B)))
+        (sd (s (quote D)))
     )
     (sa 13)
 )

@@ -150,16 +150,16 @@ static Sym PARSE(Sym a) {
 }
 
 LISPM_BUILTINS_EXT(LRT0) = {
-    {"PROGRAM", PROGRAM},
-    {"STR", STR, lispm_evcap_quote},
-    {"CHARS", CHARS},
-    {"GETC", GETC},
-    {"COPY", COPY},
-    {"SPAN", SPAN},
-    {"ADD", ADD},
-    {"MUL", MUL},
-    {"SUB", SUB},
-    {"BAND", BAND},
-    {"BNOT", BNOT},
-    {"PARSE", PARSE},
+    {"program", PROGRAM},
+    {"span", SPAN},
+    {"parse", PARSE},
+    {"str", STR, lispm_evcap_quote},
+    {"chars", CHARS},
+    {"getc", GETC},
+    {"copy", COPY},
+    {"add", ADD},
+    {"mul", MUL},
+    {"sub", SUB},
+    {"band", BAND},
+    {"bnot", BNOT},
 };
