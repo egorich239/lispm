@@ -116,6 +116,10 @@ struct Lispm {
   /* Internal values */
   unsigned htable_index_size;
   int htable_index_shift;
+
+#if LISPM_CONFIG_VERBOSE
+  unsigned apply_depth;
+#endif
 };
 
 /* The very bottom of the stack can be used for special purposes.

@@ -56,6 +56,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "%s", lispm_error_message_get());
     lispm_print_short(lispm.stack[1]);
     fprintf(stderr, "\n");
+    lispm_print_stack_trace();
   } else {
     lispm_dump(result);
   }

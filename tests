@@ -1,3 +1,25 @@
+(let
+    (
+        (letrec (lambda (l) (let
+            ((rec (lambda () (eval l))))
+            (rec))))
+
+        (fac (letrec '(lambda (n) (cond
+            ((eq 1 n) 1)
+            (t (* n ((rec) (- n 1)))) 
+        ))))
+
+        (map (letrec '(lambda (fn seq) (cond
+            ((eq () seq) ())
+            (t (cons (fn (car seq)) ((rec) fn (cdr seq))))
+        ))))
+    )
+    (cons 
+        (fac 5)
+        (map (lambda (x) (* x 2)) '(1 2 3)))
+) ===> (120 2 4 6) ; Amazingly, it actually worked!
+
+((lambda () 3)) ==> 3
 (- 1 2 MODULO) ==> 4294967295
 (+ 1 2) ==> 3
 (let ((nil '())) (cond (nil 1) (t 2))) ==> 2

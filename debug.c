@@ -70,6 +70,19 @@ void lispm_print_short(Sym sym) {
   fprintf(stderr, lispm_sym_is_nil(sym) ? ")" : "]");
 }
 
+void lispm_print_stack_trace(void) {
+#if LISPM_CONFIG_VERBOSE
+  for (unsigned d = lispm.apply_depth; d;) {
+    --d;
+    fprintf(stderr, "  ");
+    lispm_print_short(lispm.stack[2 + 2 * d + 0]);
+    fprintf(stderr, " ");
+    lispm_print_short(lispm.stack[2 + 2 * d + 1]);
+    fprintf(stderr, "\n");
+  }
+#endif
+}
+
 void lispm_dump(Sym sym) {
   static int indent = 0;
   static int same_line = 0;

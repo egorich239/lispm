@@ -2,6 +2,15 @@
 
 #define M lispm
 
+#if LISPM_CONFIG_VERBOSE
+#define WHEN_VERBOSE(...)                                                                                              \
+  do {                                                                                                                 \
+    __VA_ARGS__                                                                                                        \
+  } while (0)
+#else
+#define WHEN_VERBOSE(...) ((void)0)
+#endif
+
 /* error reporting */
 __attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx) {
   LISPM_ASSERT(M.stack);
@@ -392,6 +401,13 @@ static Sym evapply(Sym e) {
   if (!bi || !bi->evcap) eval_args = 1; /* not a special form */
   if (eval_args) a = evlis(a);
 
+  WHEN_VERBOSE({
+    ++M.apply_depth; /* decremented in eval0 */
+    unsigned base = 2 * M.apply_depth < LISPM_PP_OFFSET ? 2 * M.apply_depth : LISPM_PP_OFFSET - 2;
+    M.stack[base + 0] = f;
+    M.stack[base + 1] = a;
+  });
+
   if (bi) return bi->eval(a);
 
   LISPM_ASSERT(lispm_sym_is_lambda(f));
@@ -417,7 +433,9 @@ static Sym eval0(Sym e) {
   if (lispm_sym_is_shortnum(e)) return e;
   if (lispm_sym_is_literal(e)) return lispm_literal_get_assoc(e);
   unsigned mark = M.sp - M.stack;
-  return gc(evapply(e), mark);
+  Sym res = gc(evapply(e), mark);
+  WHEN_VERBOSE({ --M.apply_depth; });
+  return res;
 }
 
 /* API */
@@ -428,6 +446,7 @@ static inline int lispm_is_valid_result(Sym e) {
 static void lispm_main(void) {
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
   M.htable_index_shift = __builtin_clz(M.htable_index_size) + 1;
+  WHEN_VERBOSE({ M.apply_depth = 0; });
 
   int i = 0;
   for (const struct Builtin *bi = M.builtins; bi->name; ++bi, ++i) {
