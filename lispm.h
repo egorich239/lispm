@@ -82,6 +82,11 @@ struct __attribute__((aligned(16))) Builtin {
 #define LISPM_BUILTINS_EXT(name)                                                                                       \
   static const struct Builtin name[] __attribute__((section(".lispm.rodata.builtins.ext"), aligned(16), used))
 
+struct TraceCbs {
+  void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
+  void (*apply_leave)(void);
+};
+
 /* State of LISPM */
 struct Lispm {
   /* Array of builtins, terminates with an entry with NULL `name`. */
@@ -118,7 +123,7 @@ struct Lispm {
   int htable_index_shift;
 
 #if LISPM_CONFIG_VERBOSE
-  unsigned apply_depth;
+  struct TraceCbs trace;
 #endif
 };
 

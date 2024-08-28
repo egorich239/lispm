@@ -3,6 +3,16 @@
 
 #include <stdio.h>
 
+struct CallFrame {
+  Sym fn;
+  Sym resolved;
+  Sym args;
+};
+
+enum { STACK_TRACE_DEPTH = 32 };
+static struct CallFrame stack_trace[STACK_TRACE_DEPTH];
+static unsigned stack_trace_depth;
+
 static const char *literal_name(Sym l) { return lispm.strings + lispm_literal_str_offs(l); }
 
 void lispm_print_short(Sym sym) {
@@ -89,15 +99,57 @@ void lispm_print_short(Sym sym) {
   fprintf(stderr, lispm_sym_is_nil(sym) ? ")" : "]");
 }
 
+static void print_call_frame(struct CallFrame frame) {
+  fprintf(stderr, "  ");
+  lispm_print_short(frame.fn);
+  fprintf(stderr, " = ");
+  lispm_print_short(frame.resolved);
+  fprintf(stderr, ": ");
+  lispm_print_short(frame.args);
+  fprintf(stderr, "\n");
+  if (lispm_sym_is_lambda(frame.resolved)) {
+    Sym *cap = lispm_st_obj_unpack(frame.resolved);
+    fprintf(stderr, "    ");
+    lispm_print_short(cap[0]);
+    fprintf(stderr, "\n");
+  }
+  fprintf(stderr, "\n");
+}
+
+static void trace_full_apply_enter(Sym f, Sym resolved, Sym a) {
+  print_call_frame((struct CallFrame){.fn = f, .resolved = resolved, .args = a});
+}
+
+static void trace_apply_enter(Sym f, Sym resolved, Sym a) {
+  const unsigned target = stack_trace_depth < STACK_TRACE_DEPTH ? stack_trace_depth : STACK_TRACE_DEPTH - 1;
+  stack_trace[target] = (struct CallFrame){.fn = f, .resolved = resolved, .args = a};
+  ++stack_trace_depth;
+}
+
+static void trace_apply_leave() { --stack_trace_depth; }
+
+void lispm_trace_full(void) {
+#if LISPM_CONFIG_VERBOSE
+  lispm.trace.apply_enter = trace_full_apply_enter;
+#endif
+}
+
+void lispm_trace(void) {
+#if LISPM_CONFIG_VERBOSE
+  lispm.trace.apply_enter = trace_apply_enter;
+  lispm.trace.apply_leave = trace_apply_leave;
+#endif
+}
+
 void lispm_print_stack_trace(void) {
 #if LISPM_CONFIG_VERBOSE
-  for (unsigned d = lispm.apply_depth; d;) {
-    --d;
-    fprintf(stderr, "  ");
-    lispm_print_short(lispm.stack[2 + 2 * d + 0]);
-    fprintf(stderr, " ");
-    lispm_print_short(lispm.stack[2 + 2 * d + 1]);
-    fprintf(stderr, "\n");
+  if (stack_trace_depth >= STACK_TRACE_DEPTH) {
+    print_call_frame(stack_trace[STACK_TRACE_DEPTH - 1]);
+    fprintf(stderr, "  ... %u frames omitted\n", stack_trace_depth - STACK_TRACE_DEPTH);
+    stack_trace_depth = STACK_TRACE_DEPTH - 1;
+  }
+  while (stack_trace_depth) {
+    print_call_frame(stack_trace[--stack_trace_depth]);
   }
 #endif
 }

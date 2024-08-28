@@ -3,12 +3,12 @@
 #define M lispm
 
 #if LISPM_CONFIG_VERBOSE
-#define WHEN_VERBOSE(...)                                                                                              \
+#define LISPM_TRACE(event, ...)                                                                                        \
   do {                                                                                                                 \
-    __VA_ARGS__                                                                                                        \
+    if (M.trace.event) M.trace.event(__VA_ARGS__);                                                                     \
   } while (0)
 #else
-#define WHEN_VERBOSE(...) ((void)0)
+#define LISPM_TRACE(...) ((void)0)
 #endif
 
 /* error reporting */
@@ -403,16 +403,9 @@ static Sym evapply(Sym e) {
   LISPM_EVAL_CHECK(is_lambda_or_builtin_fn(fn, &bi), LISPM_ERR_EVAL, "a function expected, got: ", f);
   if (!bi || !bi->evcap) eval_args = 1; /* not a special form */
   if (eval_args) a = evlis(a);
-
-  WHEN_VERBOSE({
-    ++M.apply_depth; /* decremented in eval0 */
-    unsigned base = 2 * M.apply_depth < LISPM_PP_OFFSET ? 2 * M.apply_depth : LISPM_PP_OFFSET - 2;
-    M.stack[base + 0] = f;
-    M.stack[base + 1] = a;
-  });
+  LISPM_TRACE(apply_enter, f, fn, a);
 
   if (bi) return bi->eval(a);
-
   LISPM_ASSERT(lispm_sym_is_lambda(fn));
   Sym c, p, b, as, n, v, *la;
   la = lispm_st_obj_unpack(fn), c = la[0], p = la[1], b = la[2];
@@ -437,7 +430,7 @@ static Sym eval0(Sym e) {
   if (lispm_sym_is_literal(e)) return lispm_literal_get_assoc(e);
   unsigned mark = M.sp - M.stack;
   Sym res = gc(evapply(e), mark);
-  WHEN_VERBOSE({ --M.apply_depth; });
+  LISPM_TRACE(apply_leave);
   return res;
 }
 
@@ -449,7 +442,6 @@ static inline int lispm_is_valid_result(Sym e) {
 static void lispm_main(void) {
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
   M.htable_index_shift = __builtin_clz(M.htable_index_size) + 1;
-  WHEN_VERBOSE({ M.apply_depth = 0; });
 
   int i = 0;
   for (const struct Builtin *bi = M.builtins; bi->name; ++bi, ++i) {

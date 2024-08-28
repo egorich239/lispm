@@ -35,6 +35,10 @@ struct Lispm lispm = {
     /*htable*/
     .htable = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
+
+#if LISPM_CONFIG_VERBOSE
+    .trace = {},
+#endif
 };
 
 int main(int argc, char *argv[]) {
@@ -51,12 +55,13 @@ int main(int argc, char *argv[]) {
   lispm.program_end = page_begin + stat.st_size;
   lispm.pc = lispm.program;
 
+  lispm_trace_full();
   Sym result = lispm_exec();
   if (lispm_sym_is_error(result)) {
     fprintf(stderr, "%s", lispm_error_message_get());
     lispm_print_short(lispm.stack[1]);
     fprintf(stderr, "\n");
-    lispm_print_stack_trace();
+    // lispm_print_stack_trace();
   } else {
     lispm_dump(result);
   }

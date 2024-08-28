@@ -1,11 +1,26 @@
 (let
     (
+        (letrec (lambda (l) (let
+            ((rec (lambda () (eval l))))
+            (let ((rec rec)) (car (cons (rec) rec))))))
+
+        (fac (letrec '(lambda (n) (cond
+            ((eq 1 n) 1)
+            (t (* n ((eval '(rec)) (- n 1)))) 
+        ))))
+    )
+    (fac 2)
+) ===> (120 2 4 6)
+
+(let
+    (
         (x 3)
         (y (let ((x 5)) x))
     )
 
     (cons x y)
 ) ==> 3 5
+
 
 (let
     (
