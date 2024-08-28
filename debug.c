@@ -53,7 +53,8 @@ void lispm_print_short(Sym sym) {
     return;
   }
   LISPM_ASSERT(lispm_sym_is_cons(sym));
-  int counter = 3;
+  enum { COUNTER_INIT_VALUE = 7 };
+  int counter = COUNTER_INIT_VALUE;
   fprintf(stderr, "(");
   while (lispm_sym_is_cons(sym)) {
     Sym *cons = lispm_st_obj_unpack(sym);
@@ -64,8 +65,12 @@ void lispm_print_short(Sym sym) {
       --counter;
       continue;
     }
-    if (counter-- < 3) { fprintf(stderr, " "); }
+    if (counter-- < COUNTER_INIT_VALUE) { fprintf(stderr, " "); }
     lispm_print_short(cons[0]);
+  }
+  if (!lispm_sym_is_nil(sym) && counter >= 0) {
+    fprintf(stderr, " ");
+    lispm_print_short(sym);
   }
   fprintf(stderr, lispm_sym_is_nil(sym) ? ")" : "]");
 }

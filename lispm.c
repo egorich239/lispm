@@ -321,6 +321,7 @@ static Sym EQ(Sym a) {
   Sym *cx = lispm_st_obj_unpack(x), *cy = lispm_st_obj_unpack(y);
   return cx[0] == cy[0] && cx[1] == cy[1];
 }
+static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, LISPM_ERR_EVAL, "panic: ", a); }
 
 static const struct Builtin *builtin(Sym s) {
   LISPM_ASSERT(lispm_sym_is_builtin_sym(s));
@@ -481,4 +482,5 @@ static const struct Builtin LISPM_CORE_BUILTINS[]
         {"cdr", CDR},
         {"eq", EQ},
         {"eval", EVAL},
+        {"panic", PANIC},
 };
