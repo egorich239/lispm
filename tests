@@ -1,5 +1,17 @@
 (let
     (
+        (fact (lambda (fact) (lambda (n s) (cond
+            ((eq 1 n) 1)
+            (t (* n ((fact fact) (- n s) s))) 
+        ))))
+
+        (fact (fact fact))
+    )
+    (fact 5 2)
+)
+
+(let
+    (
         (letrec (lambda (l) (let
             ((rec (lambda () (eval l))))
             (let ((rec rec)) (car (cons (rec) rec))))))

@@ -305,7 +305,7 @@ static Sym lispm_evlet(Sym e) {
   Sym res = eval0(b);
   return lispm_restore_shadow(s, LISPM_SYM_NIL), res;
 }
-static Sym EVAL(Sym e) { /* can be done in lisp, but let's not */ return eval0(lispm_evquote(e)); }
+static Sym LIST(Sym a) { return a; }
 static Sym CONS(Sym a) {
   Sym x, y;
   lispm_args_unpack2(a, &x, &y);
@@ -472,9 +472,9 @@ static const struct Builtin LISPM_CORE_BUILTINS[]
         {"let", lispm_evlet, lispm_evcap_let},
         {"atom", ATOM},
         {"cons", CONS},
+        {"list", LIST},
         {"car", CAR},
         {"cdr", CDR},
         {"eq", EQ},
-        {"eval", EVAL},
         {"panic", PANIC},
 };
