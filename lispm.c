@@ -293,15 +293,17 @@ static Sym lispm_evcap_let(Sym t, Sym c0) {
   return lispm_evcap_remove_bindings(c, c0);
 }
 static Sym lispm_evlet(Sym e) {
-  Sym c, b, a, n, v, *cons;
+  Sym c, b, a, n, v, s = LISPM_SYM_NIL, *cons;
   cons = lispm_cons_unpack_user(e), c = cons[0], b = cons[1];
   b = lispm_evquote(b);
   while (!lispm_sym_is_nil(c)) {
     cons = lispm_cons_unpack_user(c), a = cons[0], c = cons[1];
     cons = lispm_cons_unpack_user(a), n = cons[0], v = cons[1];
-    lispm_literal_set_assoc(n, eval0(lispm_evquote(v)));
+    v = eval0(lispm_evquote(v));
+    s = lispm_cons_alloc(lispm_cons_alloc(n, lispm_literal_set_assoc(n, v)), s);
   }
-  return eval0(b);
+  Sym res = eval0(b);
+  return lispm_restore_shadow(s, LISPM_SYM_NIL), res;
 }
 static Sym EVAL(Sym e) { /* can be done in lisp, but let's not */ return eval0(lispm_evquote(e)); }
 static Sym CONS(Sym a) {
@@ -388,17 +390,17 @@ static int is_lambda_or_builtin_fn(Sym f, const struct Builtin **bi) {
   return (*bi)->eval != 0;
 }
 static Sym evapply(Sym e) {
-  Sym f, a, *cons;
+  Sym f, fn, a, *cons;
   cons = lispm_cons_unpack_user(e), f = cons[0], a = cons[1];
   int eval_args = 0;
   if (lispm_sym_is_cons(f)) { /* rewrite nested calls */
-    f = eval0(f);
+    fn = f = eval0(f);
     eval_args = 1;
   }
-  if (lispm_sym_is_literal(f)) f = lispm_literal_get_assoc(f); /* resolve literal */
+  if (lispm_sym_is_literal(f)) fn = lispm_literal_get_assoc(f); /* resolve literal */
 
   const struct Builtin *bi = 0;
-  LISPM_EVAL_CHECK(is_lambda_or_builtin_fn(f, &bi), LISPM_ERR_EVAL, "a function expected, got: ", f);
+  LISPM_EVAL_CHECK(is_lambda_or_builtin_fn(fn, &bi), LISPM_ERR_EVAL, "a function expected, got: ", f);
   if (!bi || !bi->evcap) eval_args = 1; /* not a special form */
   if (eval_args) a = evlis(a);
 
@@ -411,9 +413,9 @@ static Sym evapply(Sym e) {
 
   if (bi) return bi->eval(a);
 
-  LISPM_ASSERT(lispm_sym_is_lambda(f));
+  LISPM_ASSERT(lispm_sym_is_lambda(fn));
   Sym c, p, b, as, n, v, *la;
-  la = lispm_st_obj_unpack(f), c = la[0], p = la[1], b = la[2];
+  la = lispm_st_obj_unpack(fn), c = la[0], p = la[1], b = la[2];
   Sym s = LISPM_SYM_NIL;
   while (!lispm_sym_is_nil(c)) { /* captures */
     cons = lispm_st_obj_unpack(c), as = cons[0], c = cons[1];
@@ -426,7 +428,7 @@ static Sym evapply(Sym e) {
     cons = lispm_cons_unpack_user(a), v = cons[0], a = cons[1];
     s = lispm_cons_alloc(lispm_cons_alloc(n, lispm_literal_set_assoc(n, v)), s);
   }
-  LISPM_EVAL_CHECK(lispm_sym_is_nil(a), LISPM_ERR_EVAL, "too many arguments for call: ", f);
+  LISPM_EVAL_CHECK(lispm_sym_is_nil(a), LISPM_ERR_EVAL, "too many arguments for call: ", fn);
   Sym res = eval0(b);
   return lispm_restore_shadow(s, LISPM_SYM_NIL), res;
 }

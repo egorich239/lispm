@@ -1,4 +1,12 @@
-(panic 3 14 15 9)
+(let
+    (
+        (x 3)
+        (y (let ((x 5)) x))
+    )
+
+    (cons x y)
+) ==> 3 5
+
 (let
     (
         (letrec (lambda (l) (let
@@ -17,8 +25,9 @@
     )
     (cons 
         (fac 5)
-        (map (lambda (x) (* x 2)) '(1 2 3)))
+        (map fac '(1 2 3 4 5 6)))
 ) ===> (120 2 4 6) ; Amazingly, it actually worked!
+(panic 3 14 15 9)
 
 ((lambda () 3)) ==> 3
 (- 1 2 MODULO) ==> 4294967295

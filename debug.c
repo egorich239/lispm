@@ -49,7 +49,21 @@ void lispm_print_short(Sym sym) {
     return;
   }
   if (lispm_sym_is_lambda(sym)) {
-    fprintf(stderr, "(lambda (...))");
+    Sym *cab = lispm_st_obj_unpack(sym);
+    fprintf(stderr, "(lambda ");
+    lispm_print_short(cab[1]);
+    fprintf(stderr, " ...)");
+    return;
+  }
+  if (lispm_sym_is_span(sym)) {
+    fprintf(stderr, "(span ");
+    Sym *pol = lispm_st_obj_unpack(sym);
+    lispm_print_short(pol[0]);
+    fprintf(stderr, " ");
+    lispm_print_short(pol[1]);
+    fprintf(stderr, " ");
+    lispm_print_short(pol[2]);
+    fprintf(stderr, ")");
     return;
   }
   LISPM_ASSERT(lispm_sym_is_cons(sym));
@@ -117,7 +131,7 @@ void lispm_dump(Sym sym) {
   } else if (lispm_sym_is_lambda(sym)) {
     unsigned offs = lispm_st_obj_st_offs(sym);
     Sym cap = stack[offs], par = stack[offs + 1], body = stack[offs + 2];
-    fprintf(stderr, "(LAMBDA\n");
+    fprintf(stderr, "(lambda\n");
     indent += 2;
     lispm_dump(par);
     lispm_dump(body);
