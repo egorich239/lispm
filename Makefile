@@ -3,7 +3,7 @@ CFLAGS = -Wall -Werror -O0 -fomit-frame-pointer -gdwarf-2 -g3 -mtune=generic
 SRCS = $(wildcard *.c)
 OBJS = $(SRCS:%.c=%.o)
 
-CLEANFILES = $(OBJS) a.out launcher
+CLEANFILES = $(OBJS) a.out launcher testeval evaltests.txt evaltests.o
 	
 .PHONY:	all
 all:	launcher
@@ -16,10 +16,15 @@ $(OBJS): %.o: %.c
 launcher: launcher.o lrt0.o lispm.o rt-std.o debug.o lispm.ld
 	$(CC) $(CFLAGS) $(filter %.o,$^) -Wl,-T$(filter %.ld,$^) -o $@
 
-.PHONY: run
-run: launcher tests
-	./launcher tests
+evaltests.txt: $(wildcard evaltests/*)
+	cat $^ >$@
 
-symtable.h: gen-symtable.c
-	$(CC) $(CFLAGS) gen-symtable.c
-	./a.out > symtable.h
+evaltests.o: evaltests.txt
+	$(LD) -r -b binary -z noexecstack -o $@ $^
+
+testeval: testeval.c evaltests.o lrt0.o lispm.o rt-std.o debug.o lispm.ld
+	$(CC) $(CFLAGS) $(filter %.o %.c,$^) -Wl,-T$(filter %.ld,$^) -o $@
+
+.PHONY: test
+test: testeval
+	./testeval

@@ -56,6 +56,7 @@ int main(int argc, char *argv[]) {
   lispm.pc = lispm.program;
 
   lispm_trace_full();
+  lispm_init();
   Sym result = lispm_exec();
   if (lispm_sym_is_error(result)) {
     fprintf(stderr, "%s", lispm_error_message_get());

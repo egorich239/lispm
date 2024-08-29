@@ -441,6 +441,13 @@ static inline int lispm_is_valid_result(Sym e) {
   return lispm_sym_is_nil(e) || lispm_sym_is_t(e) || lispm_sym_is_atom(e) || lispm_sym_is_cons(e);
 }
 static void lispm_main(void) {
+  Sym r = lispm_eval(M.pc, M.program_end);
+  LISPM_EVAL_CHECK(lispm_is_valid_result(r), LISPM_ERR_EVAL, "invalid result of evaluation: ", r);
+  M.stack[0] = r;
+}
+
+void lispm_init(void) {
+  LISPM_ASSERT(lispm_is_valid_config());
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
   M.htable_index_shift = __builtin_clz(M.htable_index_size) + 1;
 
@@ -453,13 +460,10 @@ static void lispm_main(void) {
     entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     if (bi->store) *bi->store = s;
   }
-  Sym r = lispm_eval(M.pc, M.program_end);
-  LISPM_EVAL_CHECK(lispm_is_valid_result(r), LISPM_ERR_EVAL, "invalid result of evaluation: ", r);
-  M.stack[0] = r;
 }
 
 Sym lispm_exec(void) {
-  LISPM_ASSERT(lispm_is_valid_config());
+  LISPM_ASSERT(M.htable_index_size != 0); /* check that the machine has been initialized */
   lispm_rt_try(lispm_main);
   return M.stack[0];
 }
@@ -471,11 +475,11 @@ static const struct Builtin LISPM_CORE_BUILTINS[]
         {"cond", lispm_evcon, lispm_evcap_con},
         {"lambda", lispm_evlambda, lispm_evcap_lambda},
         {"let", lispm_evlet, lispm_evcap_let},
-        {"atom", ATOM},
-        {"cons", CONS},
+        {"atom?", ATOM},
+        {"eq?", EQ},
         {"list", LIST},
+        {"cons", CONS},
         {"car", CAR},
         {"cdr", CDR},
-        {"eq", EQ},
         {"panic!", PANIC},
 };

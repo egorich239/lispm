@@ -1,26 +1,75 @@
-LISPM is an implementation of a simplistic LISP machine.
+LISPM is an implementation of a minimalistic LISP machine.
 
-We assume ASCII encoding. Source code can contain symbols in `[0; 126]` range.
+ASCII encoding is assumed. Source code can contain symbols in `[0; 126]` range.
 ASCII symbol `DEL` is not permitted same as all symbols with the 8th bit set.
-There are two kinds of atom:
-- literals: a sequence of symbols in ASCII range 42 to 126, not starting with
-  an ASCII digit. Letters are not capitalized, `ABC` and `Abc` are two distinct
-  literals;
-- unsigned numerals: decimal, no leading zeros.
+The language is case-sensitive: `Abc` and `abc` are different symbols.
 
-There are several traditional LISP builtin forms: `()` for empty list,
-`T`, `ATOM`, `CONS`, `CAR`, `CDR`, `COND`, `QUOTE`.
-The `LAMBDA` form creates a function, that can be passed used as a value.
-The `LET` form binds the names to their values (expressions are evaluated once
-at the time of binding), and evaluates an expression using those assignments.
+There are three kinds of atom:
+- empty list: `()`
+- literals: a sequence of alphanumeric symbols or symbols `!$%&*+-./@^_`
+            where the first symbol is not a number;
+- unsigned numerals: decimal, no leading zeros, range `[0; 2^(M-2) - 1]`,
+            where `M` is number of bits in `unsigned int`.
 
-One more kind of value (apart from atoms, cons and lambdas) is a memory span.
-The machine maintains a list of several memory pages, and provides access to
-them.
+There are several traditional forms: `lambda`, `let`, `cond`, `quote`.
+In our dialect `cond` evaluates the first branch where predicate evaluates
+to anything but the empty list `()`.
 
-Special form `(STR A)` returns the memory span of the string representation of
-the input atom `A` for any literal atom.
-Function `(CHARS span)` produces the ASCII-sequence, corresponding to the
-symbols in the span.
-Another important memory span is `(PROGRAM)` -- this function returns the
-memory span of the memory page of the program.
+There are several builtin functions: `atom?`, `eq?`, `cons`, `car`, `cdr`, `list`.
+In our dialect `eq?` returns true only iff both arguments are the same atom;
+if at least one of the arguments is not an atom, it will always return `()`.
+
+There is a `panic!` builtin function that immediately terminates the evaluation,
+and keeps its parameters as a context for the error, as in:
+`(panic! '(the roof is on fire))`.
+
+A lambda is a value: it binds all free variables in the body of the lambda
+at the moment of its creation, i.e. when `(lambda ...)` form is evaluated.
+
+Development principles
+----------------------
+
+- I aim to be safe: interpreting a LISP program should either end up evaluating
+  the provided user function, or fail with an error, but without memory
+  corruption or a segfault.
+- I aim to keep the `lispm.c` core small, my guideline is less than 500 lines.
+- I aim to keep the `lispm.c` core readable, although I am constantly unhappy
+  about its state; in fact as of writing I am rather unhappy.
+- I aim to keep the binary size of `lispm.c` text section minimal, my guideline
+  is 4K in `-Oz -fomit-frame-pointer -mtune=generic` mode for x86-64.
+- I aim to keep zero dependencies: it should be possible to enter the machine
+  from a boot loader. The few runtime dependencies are abstracted away via
+  externally provided functions.
+- I aim to keep low development dependencies.
+
+Debugging and tracing
+---------------------
+
+After having spent some early days in `gdb` (and I am a very novel user of it),
+I also aim for better introspection into the state of the machine.
+
+This is the least developed part of the machine, which I usually improve when
+I suspect a simple way to avoid another GDB session with some additional
+introspection into program state.
+
+Configuration
+-------------
+
+Configuration is done using flags in `lispm.h`:
+- `LISPM_CONFIG_ASSERT`: turn on (1) or off (0) assertions. An assertion can
+  not be caused by user input (i.e text of the LISP program). There are three
+  possible reasons for assertions:
+  1) a bug in the interpreter itself;
+  2) a misconfigured `lispm` symbol, as defined by `lispm_is_valid_config()`
+     function;
+  3) an native extension (e.g. `lrt0.c`) violating some of the assumptions.
+  
+  If all of those are excluded, then assertions are useless, and can be
+  turned off.
+- `LISPM_CONFIG_VERBOSE`: If the LISPM machine ends up in an error state,
+  either because of a bug in the program, or because of resource exhaustion,
+  then it returns ends with an error. When `LISPM_CONFIG_VERBOSE` is non-zero,
+  the error will have much more information attached to it, including a human
+  readable explanation. This verbosity is bloating the binary however, and
+  hence it is possible to turn it off - in this case error state will be
+  reported with a bare minimum of information.

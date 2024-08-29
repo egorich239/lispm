@@ -170,6 +170,7 @@ static inline int lispm_is_valid_config(void) {
 }
 
 /* Runs lispm and returns the evaluated symbol */
+void lispm_init(void);
 Sym lispm_exec(void);
 
 /* Sym API */
