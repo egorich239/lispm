@@ -1,6 +1,12 @@
 #include "lispm.h"
 
-#define M lispm
+#define M           lispm
+#define NIL         lispm_sym_is_nil
+#define ASSOC_SET   lispm_literal_set_assoc
+#define ASSOC_GET   lispm_literal_get_assoc
+#define C(car, cdr) lispm_cons_alloc((struct Cons){(car), (cdr)})
+
+typedef struct Cons Cons;
 
 #if LISPM_CONFIG_VERBOSE
 #define LISPM_TRACE(event, ...)                                                                                        \
@@ -71,13 +77,13 @@ static inline Sym lispm_literal_is_builtin(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   return !(M.htable[lispm_literal_ht_offs(s)] & LITERAL_NBUILTIN_BIT);
 }
-static inline Sym lispm_literal_get_assoc(Sym s) {
+static inline Sym ASSOC_GET(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   const Sym a = M.htable[lispm_literal_ht_offs(s) + 1];
   LISPM_EVAL_CHECK(a != LISPM_SYM_NO_ASSOC, LISPM_ERR_EVAL, "unbound literal: ", s);
   return a;
 }
-static inline Sym lispm_literal_set_assoc(Sym s, Sym assoc) {
+static inline Sym ASSOC_SET(Sym s, Sym assoc) {
   LISPM_EVAL_CHECK(!lispm_literal_is_builtin(s), LISPM_ERR_EVAL, "cannot bind to builtin: ", s);
   Sym *a = M.htable + (lispm_literal_ht_offs(s) + 1);
   const Sym old_assoc = *a;
@@ -181,7 +187,7 @@ static Sym lispm_parse0(Sym tok) {
   if (lispm_sym_is_atom(tok)) return tok;
   LISPM_EVAL_CHECK(tok == TOK_LPAREN || tok == TOK_QUOTE, LISPM_ERR_PARSE, "unexpected token: ", tok);
   Sym la = lex();
-  if (tok == TOK_QUOTE) return lispm_cons_alloc(LITERAL_QUOTE, lispm_cons_alloc(lispm_parse0(la), LISPM_SYM_NIL));
+  if (tok == TOK_QUOTE) return C(LITERAL_QUOTE, C(lispm_parse0(la), LISPM_SYM_NIL));
   if (la == TOK_RPAREN) return LISPM_SYM_NIL;
   unsigned low_mark = M.pp - M.stack;
   while (la != TOK_RPAREN) {
@@ -190,9 +196,9 @@ static Sym lispm_parse0(Sym tok) {
     M.pp[-1] = lispm_parse0(la);
     la = lex();
   }
-  Sym res = lispm_cons_alloc(*--M.pp, LISPM_SYM_NIL);
+  Sym res = C(*--M.pp, LISPM_SYM_NIL);
   while (low_mark < (M.pp - M.stack))
-    res = lispm_cons_alloc(*--M.pp, res);
+    res = C(*--M.pp, res);
   return res;
 }
 Sym lispm_parse(const char *pc, const char *pc_end) {
@@ -209,63 +215,65 @@ Sym lispm_parse(const char *pc, const char *pc_end) {
 static Sym eval0(Sym e);
 static Sym evcap0(Sym p, Sym c);
 
-Sym *lispm_cons_unpack_user(Sym a) {
+Cons lispm_cons_unpack_user(Sym ref) {
   /* cons unpack on user input; soft failure mode */
-  LISPM_EVAL_CHECK(lispm_sym_is_cons(a), LISPM_ERR_EVAL, "cons expected, got: ", a);
-  return lispm_st_obj_unpack(a);
+  LISPM_EVAL_CHECK(lispm_sym_is_cons(ref), LISPM_ERR_EVAL, "cons expected, got: ", ref);
+  return lispm_cons_unpack(ref);
 }
 Sym lispm_evcap_quote(Sym a, Sym c) { return c; }
-Sym lispm_evquote(Sym a) {
-  Sym *cons = lispm_cons_unpack_user(a);
-  LISPM_EVAL_CHECK(lispm_sym_is_nil(cons[1]), LISPM_ERR_EVAL, "single-element list expected, got: ", a);
-  return cons[0];
+Sym lispm_evquote(Sym ref) {
+  Cons cons = lispm_cons_unpack_user(ref);
+  LISPM_EVAL_CHECK(NIL(cons.cdr), LISPM_ERR_EVAL, "single-element list expected, got: ", ref);
+  return cons.car;
 }
-void lispm_args_unpack2(Sym a, Sym *f, Sym *s) {
-  Sym *cons = lispm_cons_unpack_user(a);
-  *f = cons[0];
-  *s = lispm_evquote(cons[1]);
+void lispm_args_unpack2(Sym ref, Sym *f, Sym *s) {
+  Cons c1 = lispm_cons_unpack_user(ref);
+  Cons c2 = lispm_cons_unpack_user(c1.cdr);
+  LISPM_EVAL_CHECK(NIL(c2.cdr), LISPM_ERR_EVAL, "two-elements list expected, got: ", ref);
+  *f = c1.car;
+  *s = c2.car;
 }
+static Sym lispm_evcap_remove_bindings(Sym c, Sym c0);
 static Sym lispm_evcap_con(Sym bs, Sym c) {
-  Sym *cons, b;
-  while (!lispm_sym_is_nil(bs)) {
-    cons = lispm_cons_unpack_user(bs), b = cons[0], bs = cons[1];
-    cons = lispm_cons_unpack_user(b);
-    c = evcap0(cons[0], c);
-    c = evcap0(lispm_evquote(cons[1]), c);
+  Sym cond, expr;
+  while (!NIL(bs)) {
+    lispm_args_unpack2(lispm_cons_next_user(&bs), &cond, &expr);
+    Sym c0 = c;
+    c = evcap0(cond, c0);
+    c = lispm_evcap_remove_bindings(c, c0); /* TODO: test this line */
+    c = evcap0(expr, c);
   }
   return c;
 }
 static Sym lispm_evcon(Sym bs) {
-  Sym *cons, b;
-  while (!lispm_sym_is_nil(bs)) {
-    cons = lispm_cons_unpack_user(bs), b = cons[0], bs = cons[1];
-    cons = lispm_cons_unpack_user(b);
-    if (!lispm_sym_is_nil(eval0(cons[0]))) return eval0(lispm_evquote(cons[1]));
+  Sym cond, expr;
+  while (!NIL(bs)) {
+    lispm_args_unpack2(lispm_cons_next_user(&bs), &cond, &expr);
+    if (!NIL(eval0(cond))) return eval0(expr);
   }
   LISPM_EVAL_CHECK(0, LISPM_ERR_EVAL, "condtion branches exhausted", LISPM_SYM_NO_ASSOC);
 }
 static void lispm_restore_shadow(Sym s, Sym s0) {
   Sym *cons, a;
   while (s != s0) {
-    cons = lispm_st_obj_unpack(s), a = cons[0], s = cons[1];
-    cons = lispm_st_obj_unpack(a);
-    lispm_literal_set_assoc(cons[0], cons[1]);
+    Cons as = lispm_cons_unpack(lispm_cons_next(&s));
+    ASSOC_SET(as.car, as.cdr);
   }
 }
 static Sym lispm_evcap_remove_bindings(Sym c, Sym c0) {
+  /* TODO: get rid of non-tail recursion */
   if (c == c0) return c0;
-  Sym *cons, a;
-  cons = lispm_st_obj_unpack(c), a = cons[0], c = cons[1];
-  cons = lispm_st_obj_unpack(a);
+  Sym as_ref = lispm_cons_next(&c);
+  Cons as = lispm_cons_unpack(as_ref);
   c = lispm_evcap_remove_bindings(c, c0);
-  return cons[1] == LISPM_SYM_BINDING ? c : lispm_cons_alloc(a, c);
+  return as.cdr == LISPM_SYM_BINDING ? c : C(as_ref, c);
 }
 static Sym lispm_evcap_lambda(Sym t, Sym c0) {
-  Sym p, b, n, c = c0, *cons;
+  Sym c = c0, p, b;
   lispm_args_unpack2(t, &p, &b);
-  while (!lispm_sym_is_nil(p)) {
-    cons = lispm_cons_unpack_user(p), n = cons[0], p = cons[1];
-    c = lispm_cons_alloc(lispm_cons_alloc(n, lispm_literal_set_assoc(n, LISPM_SYM_BINDING)), c);
+  while (!NIL(p)) {
+    Sym name = lispm_cons_next_user(&p);
+    c = C(C(name, ASSOC_SET(name, LISPM_SYM_BINDING)), c);
   }
   c = evcap0(b, c);
   lispm_restore_shadow(c, c0);
@@ -278,39 +286,37 @@ static Sym lispm_evlambda(Sym t) {
   return lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA, arr);
 }
 static Sym lispm_evcap_let(Sym t, Sym c0) {
-  Sym a, b, e, e1, n, c = c0, *cons;
-  cons = lispm_cons_unpack_user(t), a = cons[0], e = cons[1];
-  while (!lispm_sym_is_nil(a)) {
-    cons = lispm_cons_unpack_user(a), b = cons[0], a = cons[1];
-    cons = lispm_cons_unpack_user(b), n = cons[0], e1 = cons[1];
-    c = evcap0(lispm_evquote(e1), c);
-    c = lispm_cons_alloc(lispm_cons_alloc(n, lispm_literal_set_assoc(n, LISPM_SYM_BINDING)), c);
+  Sym c = c0, binds, expr;
+  lispm_args_unpack2(t, &binds, &expr);
+  while (!NIL(binds)) {
+    Sym bind = lispm_cons_next_user(&binds), name, expr;
+    lispm_args_unpack2(bind, &name, &expr);
+    c = evcap0(expr, c);
+    c = C(C(name, ASSOC_SET(name, LISPM_SYM_BINDING)), c);
   }
-  c = evcap0(e, c); /* TODO: this suffix is the same for the evcap_lambda! */
+  c = evcap0(expr, c); /* TODO: this suffix is the same for the evcap_lambda! */
   lispm_restore_shadow(c, c0);
   return lispm_evcap_remove_bindings(c, c0);
 }
 static Sym lispm_evlet(Sym e) {
-  Sym c, b, a, n, v, s = LISPM_SYM_NIL, *cons;
-  cons = lispm_cons_unpack_user(e), c = cons[0], b = cons[1];
-  b = lispm_evquote(b);
-  while (!lispm_sym_is_nil(c)) {
-    cons = lispm_cons_unpack_user(c), a = cons[0], c = cons[1];
-    cons = lispm_cons_unpack_user(a), n = cons[0], v = cons[1];
-    v = eval0(lispm_evquote(v));
-    s = lispm_cons_alloc(lispm_cons_alloc(n, lispm_literal_set_assoc(n, v)), s);
+  Sym s = LISPM_SYM_NIL, binds, expr;
+  lispm_args_unpack2(e, &binds, &expr);
+  while (!NIL(binds)) {
+    Sym bind = lispm_cons_next_user(&binds), name, expr;
+    lispm_args_unpack2(bind, &name, &expr);
+    s = C(C(name, ASSOC_SET(name, eval0(expr))), s);
   }
-  Sym res = eval0(b);
+  Sym res = eval0(expr);
   return lispm_restore_shadow(s, LISPM_SYM_NIL), res;
 }
 static Sym LIST(Sym a) { return a; }
 static Sym CONS(Sym a) {
   Sym x, y;
   lispm_args_unpack2(a, &x, &y);
-  return lispm_cons_alloc(x, y);
+  return C(x, y);
 }
-static Sym CAR(Sym a) { return lispm_cons_unpack_user(lispm_evquote(a))[0]; }
-static Sym CDR(Sym a) { return lispm_cons_unpack_user(lispm_evquote(a))[1]; }
+static Sym CAR(Sym a) { return lispm_cons_unpack_user(lispm_evquote(a)).car; }
+static Sym CDR(Sym a) { return lispm_cons_unpack_user(lispm_evquote(a)).cdr; }
 static Sym ATOM(Sym a) { return lispm_sym_is_atom(lispm_evquote(a)) ? LISPM_SYM_T : LISPM_SYM_NIL; }
 static Sym EQ(Sym a) {
   Sym x, y;
@@ -328,11 +334,11 @@ static Sym evcap0(Sym p, Sym c) {
   if (lispm_sym_is_shortnum(p)) return c; /* unsigned: no need to capture */
   if (lispm_sym_is_literal(p)) {
     if (lispm_literal_is_builtin(p)) return c; /* builtins: no need to capture */
-    const Sym a = lispm_literal_get_assoc(p);
+    const Sym a = ASSOC_GET(p);
     if (a == LISPM_SYM_CAPTURED || a == LISPM_SYM_BINDING) return c; /* already captured */
 
     /* not captured yet, mark it as such */
-    return lispm_cons_alloc(lispm_cons_alloc(p, lispm_literal_set_assoc(p, LISPM_SYM_CAPTURED)), c);
+    return C(C(p, ASSOC_SET(p, LISPM_SYM_CAPTURED)), c);
   }
 
   /* evcap0 operates on the syntactic structure of the expression.
@@ -344,25 +350,27 @@ static Sym evcap0(Sym p, Sym c) {
    * `(LET ((AB (QUOTE T))) (QUOTE AB))` evaluates to `AB`
    * `(LET ((AB (QUOTE T))) ((QUOTE QUOTE) AB))` evaluates to `T`
    */
-  Sym a, t, b, *cons;
-  cons = lispm_cons_unpack_user(p), a = cons[0], t = cons[1];
-  if (lispm_sym_is_literal(a) && lispm_literal_is_builtin(a)) {
-    b = lispm_literal_get_assoc(a);
-    const struct Builtin *bi = builtin(b);
-    if (bi->evcap) return (bi->evcap)(t, c); /* special form */
+  Sym fn, args, b;
+  Cons cons = lispm_cons_unpack_user(p);
+  fn = cons.car, args = cons.cdr;
+  if (lispm_sym_is_literal(fn) && lispm_literal_is_builtin(fn)) {
+    const struct Builtin *bi = builtin(ASSOC_GET(fn));
+    if (bi->evcap) return (bi->evcap)(args, c); /* special form */
   }
-  while (!lispm_sym_is_nil(p)) {
-    cons = lispm_cons_unpack_user(p), a = cons[0], p = cons[1];
-    c = evcap0(a, c);
+  /* if not a special form, then evaluate captures of all elements */
+  while (!NIL(p)) { /* NOTE: p! */
+    Sym arg = lispm_cons_next(&p);
+    c = evcap0(arg, c); /* BUG: remove bindings before proceeding! */
   }
   return c;
 }
 static Sym reverse_inplace(Sym li) {
   /* not a public interface because it actually changes the value of a symbol, i.e. has side-effects */
-  LISPM_ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_cons(li));
-  Sym cur = li, prev = LISPM_SYM_NIL, next, *cons;
-  while (!lispm_sym_is_nil(cur)) {
-    cons = lispm_st_obj_unpack(cur), next = cons[1];
+  LISPM_ASSERT(NIL(li) || lispm_sym_is_cons(li));
+  Sym prev = LISPM_SYM_NIL, cur = li, next;
+  while (!NIL(cur)) {
+    Cons cons = lispm_cons_unpack(cur);
+    next = cons.cdr;
     M.stack[lispm_st_obj_st_offs(cur) + 1] = prev;
     prev = cur, cur = next;
   }
@@ -370,10 +378,10 @@ static Sym reverse_inplace(Sym li) {
   return prev;
 }
 static Sym evlis(Sym e) {
-  Sym res = LISPM_SYM_NIL, a, *cons;
-  while (!lispm_sym_is_nil(e)) {
-    cons = lispm_cons_unpack_user(e), a = cons[0], e = cons[1];
-    res = lispm_cons_alloc(eval0(a), res);
+  Sym res = LISPM_SYM_NIL, expr, *cons;
+  while (!NIL(e)) {
+    expr = lispm_cons_next_user(&e);
+    res = C(eval0(expr), res);
   }
   return reverse_inplace(res);
 }
@@ -384,14 +392,18 @@ static int is_lambda_or_builtin_fn(Sym f, const struct Builtin **bi) {
   return (*bi)->eval != 0;
 }
 static Sym evapply(Sym e) {
-  Sym f, fn, a, *cons;
-  cons = lispm_cons_unpack_user(e), fn = f = cons[0], a = cons[1];
+  Cons cons = lispm_cons_unpack_user(e);
+  Sym f = cons.car, fn = f, a = cons.cdr;
   int eval_args = 0;
   if (lispm_sym_is_cons(f)) { /* rewrite nested calls */
     fn = f = eval0(f);
     eval_args = 1;
   }
-  if (lispm_sym_is_literal(f)) fn = lispm_literal_get_assoc(f); /* resolve literal */
+  /* TODO: the lack of `else` here is peculiar.
+     Shall `((quote quote) abc)` really lead to evaluating the `abc` *and* applying `quote` to the result???
+     Or maybe it shall just be treated as a list '(quote abc)?
+     Or as an error? I think it shall be an error. */
+  if (lispm_sym_is_literal(f)) fn = ASSOC_GET(f); /* resolve literal */
 
   const struct Builtin *bi = 0;
   LISPM_EVAL_CHECK(is_lambda_or_builtin_fn(fn, &bi), LISPM_ERR_EVAL, "a function expected, got: ", f);
@@ -404,24 +416,23 @@ static Sym evapply(Sym e) {
   Sym c, p, b, as, n, v, *la;
   la = lispm_st_obj_unpack(fn), c = la[0], p = la[1], b = la[2];
   Sym s = LISPM_SYM_NIL;
-  while (!lispm_sym_is_nil(c)) { /* captures */
-    cons = lispm_st_obj_unpack(c), as = cons[0], c = cons[1];
-    cons = lispm_st_obj_unpack(as), n = cons[0], v = cons[1];
-    LISPM_ASSERT(v != LISPM_SYM_BINDING);
-    s = lispm_cons_alloc(lispm_cons_alloc(n, lispm_literal_set_assoc(n, v)), s);
+  while (!NIL(c)) { /* captures */
+    Cons as = lispm_cons_unpack(lispm_cons_next(&c));
+    LISPM_ASSERT(as.cdr != LISPM_SYM_BINDING);
+    s = C(C(as.car, ASSOC_SET(as.car, as.cdr)), s);
   }
-  while (!lispm_sym_is_nil(p)) { /* params */
-    cons = lispm_cons_unpack_user(p), n = cons[0], p = cons[1];
-    cons = lispm_cons_unpack_user(a), v = cons[0], a = cons[1];
-    s = lispm_cons_alloc(lispm_cons_alloc(n, lispm_literal_set_assoc(n, v)), s);
+  while (!NIL(p)) { /* params */
+    n = lispm_cons_next_user(&p);
+    v = lispm_cons_next_user(&a);
+    s = C(C(n, ASSOC_SET(n, v)), s);
   }
-  LISPM_EVAL_CHECK(lispm_sym_is_nil(a), LISPM_ERR_EVAL, "too many arguments for call: ", fn);
+  LISPM_EVAL_CHECK(NIL(a), LISPM_ERR_EVAL, "too many arguments for call: ", fn);
   Sym res = eval0(b);
   return lispm_restore_shadow(s, LISPM_SYM_NIL), res;
 }
 static Sym eval0(Sym e) {
   if (lispm_sym_is_shortnum(e)) return e;
-  if (lispm_sym_is_literal(e)) return lispm_literal_get_assoc(e);
+  if (lispm_sym_is_literal(e)) return ASSOC_GET(e);
   unsigned mark = M.sp - M.stack;
   Sym res = gc(evapply(e), mark);
   LISPM_TRACE(apply_leave);
@@ -432,7 +443,7 @@ static Sym eval0(Sym e) {
 Sym lispm_eval(const char *pc, const char *pc_end) { return eval0(lispm_parse(pc, pc_end)); }
 static inline int lispm_sym_is_t(Sym e) { return e == LISPM_SYM_T; }
 static inline int lispm_is_valid_result(Sym e) {
-  return lispm_sym_is_nil(e) || lispm_sym_is_t(e) || lispm_sym_is_atom(e) || lispm_sym_is_cons(e);
+  return NIL(e) || lispm_sym_is_t(e) || lispm_sym_is_atom(e) || lispm_sym_is_cons(e);
 }
 static void lispm_main(void) {
   Sym r = lispm_eval(M.pc, M.program_end);

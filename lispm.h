@@ -225,7 +225,7 @@ static inline Sym lispm_shortnum_bitwise_and(Sym p, Sym q) {
 }
 static inline Sym lispm_shortnum_neg(Sym p) {
   LISPM_ASSERT(lispm_sym_is_shortnum(p));
-  return ~p + 3;  /* (~p + (1 << 2)) - 1*/
+  return ~p + 3; /* (~p + (1 << 2)) - 1*/
 }
 static inline Sym lispm_shortnum_add(Sym p, Sym q, int *overflow) {
   LISPM_ASSERT(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q));
@@ -344,18 +344,39 @@ static inline void lispm_error_message_set(const char *msg) {
 #endif
 __attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx);
 
+struct Cons {
+  Sym car;
+  Sym cdr;
+};
+
 /* pc must be between M.program and M.program_end */
 Sym lispm_parse(const char *pc, const char *pc_end);
 Sym lispm_eval(const char *pc, const char *pc_end);
 
-Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
-static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
-  Sym cons[2] = {car, cdr};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_CONS, cons);
-}
-
 Sym *lispm_st_obj_unpack(Sym s);
-Sym *lispm_cons_unpack_user(Sym a);
+
+Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
+static inline Sym lispm_cons_alloc(struct Cons cons) {
+  /* I do not want to go for UB with reinterpreting cons as array, and rely on optimizer */
+  Sym arr[2] = {cons.car, cons.cdr};
+  return lispm_st_obj_alloc(LISPM_ST_OBJ_CONS, arr);
+}
+static inline struct Cons lispm_cons_unpack(Sym cons) {
+  LISPM_ASSERT(lispm_sym_is_cons(cons));
+  Sym *arr = lispm_st_obj_unpack(cons);
+  return (struct Cons){arr[0], arr[1]};
+}
+struct Cons lispm_cons_unpack_user(Sym a);
+static inline Sym lispm_cons_next(Sym *cons) {
+  struct Cons c = lispm_cons_unpack(*cons);
+  *cons = c.cdr;
+  return c.car;
+}
+static inline Sym lispm_cons_next_user(Sym *cons) {
+  struct Cons c = lispm_cons_unpack_user(*cons);
+  *cons = c.cdr;
+  return c.car;
+}
 
 Sym lispm_evcap_quote(Sym a, Sym c);
 Sym lispm_evquote(Sym a);
