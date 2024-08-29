@@ -435,6 +435,7 @@ static Sym eval0(Sym e) {
 }
 
 /* API */
+Sym lispm_eval(const char *pc, const char *pc_end) { return eval0(lispm_parse(pc, pc_end)); }
 static inline int lispm_sym_is_t(Sym e) { return e == LISPM_SYM_T; }
 static inline int lispm_is_valid_result(Sym e) {
   return lispm_sym_is_nil(e) || lispm_sym_is_t(e) || lispm_sym_is_atom(e) || lispm_sym_is_cons(e);
@@ -452,7 +453,7 @@ static void lispm_main(void) {
     entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     if (bi->store) *bi->store = s;
   }
-  Sym r = eval0(lispm_parse(M.pc, M.program_end));
+  Sym r = lispm_eval(M.pc, M.program_end);
   LISPM_EVAL_CHECK(lispm_is_valid_result(r), LISPM_ERR_EVAL, "invalid result of evaluation: ", r);
   M.stack[0] = r;
 }

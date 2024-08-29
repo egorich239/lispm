@@ -211,7 +211,7 @@ enum {
    * 2. These three words must contain Sym's, in particular the layout of these words
    *    must adhere to Sym rules. That is because garbage collector relies on it.
    */
-  LISPM_ST_OBJ_EXT = 14u,  
+  LISPM_ST_OBJ_EXT = 14u,
 };
 static inline int lispm_sym_is_st_obj(Sym s) { return (s & 3u) == 2; }
 static inline Sym lispm_make_st_obj(unsigned k, unsigned st_offs) {
@@ -305,6 +305,7 @@ __attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx);
 
 /* pc must be between M.program and M.program_end */
 Sym lispm_parse(const char *pc, const char *pc_end);
+Sym lispm_eval(const char *pc, const char *pc_end);
 
 Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
 static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {

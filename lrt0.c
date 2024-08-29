@@ -3,28 +3,28 @@
 
 #define M lispm
 
-static inline unsigned lispm_page_access(Sym pg) {
-  LISPM_ASSERT(lispm_sym_is_shortnum(pg));
-  const unsigned page = lispm_shortnum_val(pg);
-  void *b, *e;
-  unsigned access;
-  return page <= 1 ? 0 : (lispm_rt_page(page, &b, &e, &access), access);
-}
+enum {
+  PAGE_PROGRAM = 0,
+  PAGE_STRINGS = 1,
+};
 
+static void check_access_read(unsigned access, Sym ptr) {
+  LISPM_EVAL_CHECK(access & PAGE_ACCESS_R, LISPM_ERR_EVAL, "read access denied: ", ptr);
+}
+static void check_access_write(unsigned access, Sym ptr) {
+  LISPM_EVAL_CHECK(access & PAGE_ACCESS_W, LISPM_ERR_EVAL, "write access denied: ", ptr);
+}
 static Sym lispm_literal_name_span(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   unsigned offs = lispm_literal_str_offs(s);
-  unsigned len = __builtin_strlen(lispm.strings + offs);
-  Sym arr[3] = {lispm_make_shortnum(1), lispm_make_shortnum(offs), lispm_make_shortnum(len)};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
+  unsigned len = __builtin_strlen(M.strings + offs);
+  return lispm_span_alloc(lispm_make_span(PAGE_STRINGS, offs, len));
 }
-
-enum { PAGE_PROGRAM, PAGE_STRINGS };
-
-void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
-  LISPM_ASSERT(lispm_sym_is_shortnum(pg) && !(elt_size & (elt_size - 1)));
-  unsigned page = lispm_shortnum_val(pg), access;
+static void *lispm_span_base(struct Span span, unsigned *len, unsigned *access) {
   void *ptr, *b, *e;
+  unsigned page = lispm_shortnum_val(span.page);
+  *len = lispm_shortnum_val(span.len);
+  *access = PAGE_ACCESS_R;
   switch (page) {
   case PAGE_PROGRAM:
     b = (void *)M.program, e = (void *)M.program_end;
@@ -33,83 +33,18 @@ void *lispm_page_loc(Sym pg, unsigned offs, unsigned elt_size) {
     b = M.strings, e = M.strings_end;
     break;
   default:
-    lispm_rt_page(page, &b, &e, &access);
+    lispm_rt_page(page, &b, &e, access);
   }
-  ptr = b + offs * elt_size;
-  LISPM_ASSERT(ptr < e);
+  ptr = b + lispm_shortnum_val(span.offs);
+  LISPM_ASSERT(ptr <= e && ptr + *len <= e);
   return ptr;
 }
-
-static Sym PROGRAM(Sym e) {
-  LISPM_EVAL_CHECK(lispm_sym_is_nil(e), LISPM_ERR_EVAL, "no arguments expected, got: ", e);
-  Sym arr[3] = {lispm_make_shortnum(0), lispm_make_shortnum(0), lispm_make_shortnum(lispm.program_end - lispm.program)};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
-}
-static Sym GETC(Sym a) {
-  Sym ptr = lispm_evquote(a);
-  LISPM_EVAL_CHECK(lispm_sym_is_span(ptr), LISPM_ERR_EVAL, "memory span expected, got: ", ptr);
-  Sym *addr = lispm_st_obj_unpack(ptr);
-  if (!lispm_shortnum_val(addr[2])) return lispm_shortnum_val(0); /* position right after the interval */
-  return lispm_make_shortnum(*(unsigned char *)lispm_page_loc(addr[0], lispm_shortnum_val(addr[1]), 1));
+static inline struct Span lispm_span_unpack_user(Sym span) {
+  LISPM_EVAL_CHECK(lispm_sym_is_span(span), LISPM_ERR_EVAL, "span expected, got: ", span);
+  return lispm_span_unpack(span);
 }
 
-static Sym COPY(Sym a) {
-  Sym dest, src, dest_offs, src_offs, dest_len, src_len, *addr;
-  lispm_args_unpack2(a, &dest, &src);
-  LISPM_EVAL_CHECK(lispm_sym_is_span(dest) && lispm_sym_is_span(src), LISPM_ERR_EVAL,
-                   "memory spans expected as args, got: ", a);
-  addr = lispm_st_obj_unpack(dest), dest = addr[0], dest_offs = addr[1], dest_len = addr[2];
-  addr = lispm_st_obj_unpack(src), src = addr[0], src_offs = addr[1], src_len = addr[2];
-  LISPM_EVAL_CHECK(lispm_page_access(dest) & PAGE_ACCESS_W, LISPM_ERR_EVAL, "destination page must be writeable",
-                   LISPM_SYM_NO_ASSOC);
-  if (src_len < dest_len) dest_len = src_len;
-  __builtin_memcpy(lispm_page_loc(dest, lispm_shortnum_val(dest_offs), 1),
-                   lispm_page_loc(src, lispm_shortnum_val(src_offs), 1), lispm_shortnum_val(dest_len));
-  return dest_len;
-}
-static Sym STR(Sym e) {
-  e = lispm_evquote(e);
-  LISPM_EVAL_CHECK(lispm_sym_is_literal(e), LISPM_ERR_EVAL, "literal expected, got: ", e);
-  return lispm_literal_name_span(e);
-}
-static Sym CHARS(Sym a) {
-  a = lispm_evquote(a);
-  Sym pg, offs, len, *addr;
-  LISPM_EVAL_CHECK(lispm_sym_is_span(a), LISPM_ERR_EVAL, "memory span expected, got: ", a);
-  addr = lispm_st_obj_unpack(a), pg = addr[0], offs = addr[1], len = addr[2];
-  const unsigned char *p = lispm_page_loc(pg, lispm_shortnum_val(offs), 1);
-  unsigned l = lispm_shortnum_val(len);
-  p += l;
-  Sym res = LISPM_SYM_NIL;
-  while (l--)
-    res = lispm_cons_alloc(lispm_make_shortnum(*--p), res);
-  return res;
-}
-static Sym SPAN(Sym args) {
-  Sym span, start, len, *cons, *addr;
-  cons = lispm_cons_unpack_user(args), span = cons[0], start = cons[1];
-  cons = lispm_cons_unpack_user(start), start = cons[0], len = cons[1];
-  LISPM_EVAL_CHECK(lispm_sym_is_span(span), LISPM_ERR_EVAL, "memory span expected, got: ", span);
-  Sym page, offs, old_len;
-  addr = lispm_st_obj_unpack(span), page = addr[0], offs = addr[1], old_len = addr[2];
-  len = !lispm_sym_is_nil(len) ? lispm_evquote(len)
-                               : lispm_make_shortnum(lispm_shortnum_val(old_len) - lispm_shortnum_val(start));
-  /* TODO: proper check */
-  // LISPM_EVAL_CHECK(len <= old_len, LISPM_ERR_EVAL, "subspan ");
-  Sym arr[3] = {page, lispm_make_shortnum(lispm_shortnum_val(offs) + lispm_shortnum_val(start)), len};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
-}
-static Sym PARSE(Sym a) {
-  a = lispm_evquote(a);
-  LISPM_EVAL_CHECK(lispm_sym_is_span(a), LISPM_ERR_EVAL, "memory span expected, got:", a);
-  Sym pg, offs, len, *addr;
-  addr = lispm_st_obj_unpack(a), pg = addr[0], offs = addr[1], len = addr[2];
-  LISPM_EVAL_CHECK(lispm_shortnum_val(pg) == PAGE_PROGRAM, LISPM_ERR_EVAL,
-                   "parsing non-program page is prohibited, got: ", pg);
-  const char *pc = lispm.program + lispm_shortnum_val(offs);
-  return lispm_parse(pc, pc + lispm_shortnum_val(len));
-}
-
+/* TODO: these probably belong to lispm.h */
 static unsigned num_decode(Sym s) {
   LISPM_EVAL_CHECK(lispm_sym_is_shortnum(s) || lispm_sym_is_longnum(s), LISPM_ERR_EVAL, "expected a number, got: ", s);
   if (lispm_sym_is_shortnum(s)) return lispm_shortnum_val(s);
@@ -124,6 +59,94 @@ static Sym num_encode(unsigned e) {
   Sym arr[2] = {lispm_make_shortnum(e >> LISPM_SHORTNUM_BITS),
                 lispm_make_shortnum(e & ((1u << LISPM_SHORTNUM_BITS) - 1))};
   return lispm_st_obj_alloc(LISPM_ST_OBJ_LONGNUM, arr);
+}
+
+static Sym PROGRAM(Sym e) {
+  LISPM_EVAL_CHECK(lispm_sym_is_nil(e), LISPM_ERR_EVAL, "no arguments expected, got: ", e);
+  return lispm_span_alloc(lispm_make_span(PAGE_PROGRAM, 0, M.program_end - M.program));
+}
+static Sym GETC(Sym ptr) {
+  ptr = lispm_evquote(ptr);
+  unsigned len, access;
+  struct Span span = lispm_span_unpack_user(ptr);
+  const unsigned char *c = lispm_span_base(span, &len, &access);
+  check_access_read(access, ptr);
+  if (!len) return LISPM_SYM_NIL; /* position right after the interval */
+  return lispm_make_shortnum(*c);
+}
+static Sym COPY(Sym a) {
+  Sym d, s;
+  lispm_args_unpack2(a, &d, &s);
+  struct Span dest = lispm_span_unpack_user(d), src = lispm_span_unpack_user(s);
+  unsigned dest_len, dest_access, src_len, src_access;
+  void *dest_ptr = lispm_span_base(dest, &dest_len, &dest_access),
+       *src_ptr = lispm_span_base(src, &src_len, &src_access);
+  LISPM_EVAL_CHECK(src_len <= dest_len, LISPM_ERR_EVAL, "copy out of bounds for args: ", a);
+  check_access_read(src_access, s);
+  check_access_write(dest_access, d);
+  __builtin_memcpy(dest_ptr, src_ptr, src_len);
+  dest.len = lispm_make_shortnum(src_len);
+  return lispm_span_alloc(dest);
+}
+static Sym STR(Sym e) {
+  e = lispm_evquote(e);
+  LISPM_EVAL_CHECK(lispm_sym_is_literal(e), LISPM_ERR_EVAL, "literal expected, got: ", e);
+  return lispm_literal_name_span(e);
+}
+static Sym CHARS(Sym ptr) {
+  ptr = lispm_evquote(ptr);
+  unsigned len, access;
+  const unsigned char *base = lispm_span_base(lispm_span_unpack_user(ptr), &len, &access);
+  check_access_read(access, ptr);
+  Sym res = LISPM_SYM_NIL;
+  for (const unsigned char *p = base + len; p != base;)
+    res = lispm_cons_alloc(lispm_make_shortnum(*--p), res);
+  return res;
+}
+static Sym SPAN(Sym args) {
+  Sym span, begin, end, *cons;
+  cons = lispm_cons_unpack_user(args), span = cons[0], begin = cons[1];
+  cons = lispm_cons_unpack_user(begin), begin = cons[0], end = cons[1];
+  if (!lispm_sym_is_nil(end)) end = lispm_evquote(end);
+  struct Span res = lispm_span_unpack_user(span);
+  unsigned src_offs = lispm_shortnum_val(res.offs);
+  unsigned src_len = lispm_shortnum_val(res.len);
+
+  unsigned res_begin = num_decode(begin);
+  unsigned res_end = !lispm_sym_is_nil(end) ? num_decode(end) : src_len;
+  if (((int)res_end) < 0) res_end = src_len + res_end;
+  LISPM_EVAL_CHECK(res_begin <= res_end && res_end <= src_len, LISPM_ERR_EVAL, "subspan does not fit: ", span);
+
+  /* we rely on the fact that all LISP-visible span constructors allocate shortnum-pages,
+     and all operations can only shrink their input spans,
+     so here we do not eval-check that the resulting values fit into shortnum,
+     although we do indirectly assert-check.
+  */
+  res.offs = lispm_make_shortnum(src_offs + res_begin);
+  res.len = lispm_make_shortnum(res_end - res_begin);
+  return lispm_span_alloc(res);
+}
+static void lispm_program_get(Sym ptr, const char **begin, const char **end) {
+  ptr = lispm_evquote(ptr);
+  const struct Span span = lispm_span_unpack_user(ptr);
+  LISPM_EVAL_CHECK(lispm_shortnum_val(span.page) == PAGE_PROGRAM, LISPM_ERR_EVAL,
+                   "parsing non-program page is prohibited, got: ", ptr);
+  unsigned access, len;
+  *begin = lispm_span_base(span, &len, &access);
+  *end = *begin + len;
+}
+static Sym PARSE(Sym ptr) {
+  const char *begin, *end;
+  lispm_program_get(ptr, &begin, &end);
+  return lispm_parse(begin, end);
+}
+static Sym IMPORT(Sym ptr) {
+  /* the important difference from eval, is that parsing happens in-place,
+     and the result of the parsing is evaluated immediately,
+     which avoids late binding issues */
+  const char *begin, *end;
+  lispm_program_get(ptr, &begin, &end);
+  return lispm_eval(begin, end);
 }
 
 static Sym BAND(Sym a) {
@@ -179,11 +202,13 @@ static Sym SUB(Sym a) {
   LISPM_EVAL_CHECK(is_modulo || !overflow, LISPM_ERR_EVAL, "integer overflow, args: ", a);
   return num_encode(r);
 }
+static Sym NEG(Sym a) { return num_encode(-num_decode(lispm_evquote(a))); }
 
 LISPM_BUILTINS_EXT(LRT0) = {
     {"program", PROGRAM},
-    {"span", SPAN},
+    {"import", IMPORT},
     {"parse", PARSE},
+    {"span", SPAN},
     {"str", STR, lispm_evcap_quote},
     {"chars", CHARS},
     {"getc", GETC},
@@ -191,6 +216,7 @@ LISPM_BUILTINS_EXT(LRT0) = {
     {"+", ADD},
     {"*", MUL},
     {"-", SUB},
+    {"~", NEG},
     {"bitwise-and", BAND},
     {"bitwise-or", BOR},
     {"bitwise-xor", BXOR},
