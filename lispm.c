@@ -476,5 +476,5 @@ static const struct Builtin LISPM_CORE_BUILTINS[]
         {"car", CAR},
         {"cdr", CDR},
         {"eq", EQ},
-        {"panic", PANIC},
+        {"panic!", PANIC},
 };

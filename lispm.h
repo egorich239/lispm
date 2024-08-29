@@ -201,10 +201,18 @@ static inline unsigned lispm_shortnum_val(Sym s) {
 }
 
 /* stack objects */
-#define LISPM_ST_OBJ_CONS    2u
-#define LISPM_ST_OBJ_LAMBDA  6u
-#define LISPM_ST_OBJ_LONGNUM 10u
-#define LISPM_ST_OBJ_SPAN    14u
+enum {
+  LISPM_ST_OBJ_CONS = 2u,
+  LISPM_ST_OBJ_LAMBDA = 6u,
+  LISPM_ST_OBJ_LONGNUM = 10u,
+
+  /* Extension objects are not handled by lispm.c, and must adhere to some rules:
+   * 1. They must allocate exactly 3 words on stack.
+   * 2. These three words must contain Sym's, in particular the layout of these words
+   *    must adhere to Sym rules. That is because garbage collector relies on it.
+   */
+  LISPM_ST_OBJ_EXT = 14u,  
+};
 static inline int lispm_sym_is_st_obj(Sym s) { return (s & 3u) == 2; }
 static inline Sym lispm_make_st_obj(unsigned k, unsigned st_offs) {
   LISPM_ASSERT(lispm_sym_is_st_obj(k));
@@ -240,10 +248,6 @@ static inline int lispm_sym_is_lambda(Sym s) { return lispm_st_obj_kind(s) == LI
 /* longnum (2 or more words, similar to cons) */
 static inline Sym lispm_make_longnum(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_LONGNUM, st_offs); }
 static inline int lispm_sym_is_longnum(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_LONGNUM; }
-
-/* spans */
-static inline Sym lispm_make_span(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_SPAN, st_offs); }
-static inline int lispm_sym_is_span(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_SPAN; }
 
 /* specials, ctors are defined in macros, to be compile time consts */
 static inline int lispm_sym_is_special(Sym s) { return (s & 3u) == 3u; }
@@ -299,7 +303,7 @@ static inline void lispm_error_message_set(const char *msg) {
 #endif
 __attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx);
 
-/* pc must be between M.program and M.program_end page */
+/* pc must be between M.program and M.program_end */
 Sym lispm_parse(const char *pc, const char *pc_end);
 
 Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
@@ -310,10 +314,6 @@ static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
 
 Sym *lispm_st_obj_unpack(Sym s);
 Sym *lispm_cons_unpack_user(Sym a);
-
-Sym lispm_alloc_cons(Sym car, Sym cdr);
-
-Sym lispm_alloc_span(Sym page, Sym offs, Sym len);
 
 Sym lispm_evcap_quote(Sym a, Sym c);
 Sym lispm_evquote(Sym a);

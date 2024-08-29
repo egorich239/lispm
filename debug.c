@@ -1,5 +1,6 @@
 #include "debug.h"
 #include "lispm.h"
+#include "lrt0.h"
 
 #include <stdio.h>
 

@@ -3,6 +3,14 @@
 
 #define M lispm
 
+static inline unsigned lispm_page_access(Sym pg) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(pg));
+  const unsigned page = lispm_shortnum_val(pg);
+  void *b, *e;
+  unsigned access;
+  return page <= 1 ? 0 : (lispm_rt_page(page, &b, &e, &access), access);
+}
+
 static Sym lispm_literal_name_span(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   unsigned offs = lispm_literal_str_offs(s);
