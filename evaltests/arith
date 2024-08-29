@@ -1,0 +1,51 @@
+arith:neg
+(~ 0)
+0
+
+arith:neg1
+(~ 1)
+1073741823
+
+arith:neg1
+(~ 1)
+1073741823
+
+arith:sum
+(+ 1 2)
+3
+
+; TODO: !EVAL is as returned by lispm_eval() is a special symbol,
+;       !EVAL as parsed by test executor is just a regular literal.
+;       They do not match, it is a bug that shall be fixed.  
+;arith:sum-oflow
+;(+ 600000000 600000000)
+;!EVAL
+
+arith:sum-mod2
+(+ 600000000 600000000 MODULO)
+126258176
+
+arith:mul
+(* 2 3)
+6
+
+arith:mul-mod2
+(* 600000000 600000000 MODULO)
+925106176
+
+;arith:mul-oflow
+;(* 3000000 3000000)
+;!EVAL
+
+arith:sub
+(- 45 2)
+43
+
+arith:sub-mod2
+(- 1 2 MODULO)
+1073741823
+
+;arith:sub-oflow
+;(- 1 2 MODULO)
+;!EVAL
+

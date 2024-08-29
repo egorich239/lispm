@@ -2,8 +2,10 @@
 
 #include "lispm.h"
 
-/* Extension symbols: spans */
-enum { LISPM_ST_OBJ_SPAN = LISPM_ST_OBJ_EXT };
+/* Extension symbols: spans 
+ * -     <SPAN> 11 10: triplet of short unsigned's page, offs, length; see lrt0.h for more.
+ */
+enum { LISPM_ST_OBJ_SPAN = LISPM_ST_OBJ_EXT_3 };
 static inline int lispm_sym_is_span(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_SPAN; }
 
 struct Span {

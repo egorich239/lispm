@@ -157,7 +157,8 @@ static Sym lex(void) {
       goto lex_fail;
     case S_NUM:
       if (LEX_IS_DIGIT(cat) && !__builtin_umul_overflow(token_val, 10u, &token_val) &&
-          !__builtin_uadd_overflow(token_val, (unsigned)(c - '0'), &token_val))
+          !__builtin_uadd_overflow(token_val, (unsigned)(c - '0'), &token_val) &&
+          lispm_shortnum_can_represent(token_val))
         continue;
       if (LEX_IS_DELIM(cat)) goto lex_num;
       goto lex_fail;
@@ -171,10 +172,7 @@ lex_atom:
   return ensure(token_begin, M.pc);
 lex_num:
   if (token_val != 0 && *token_begin == '0') goto lex_fail;
-  if (lispm_shortnum_can_represent(token_val)) return lispm_make_shortnum(token_val);
-  Sym arr[2] = {lispm_make_shortnum(token_val >> LISPM_SHORTNUM_BITS),
-                lispm_make_shortnum(token_val & ((1u << LISPM_SHORTNUM_BITS) - 1))};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_LONGNUM, arr);
+  return lispm_make_shortnum(token_val);
 }
 
 /* parser */
@@ -317,11 +315,7 @@ static Sym ATOM(Sym a) { return lispm_sym_is_atom(lispm_evquote(a)) ? LISPM_SYM_
 static Sym EQ(Sym a) {
   Sym x, y;
   lispm_args_unpack2(a, &x, &y);
-  if (!lispm_sym_is_atom(x) || !lispm_sym_is_atom(y)) return LISPM_SYM_NIL;
-  if (x == y) return LISPM_SYM_T;
-  if (!lispm_sym_is_longnum(x) || !lispm_sym_is_longnum(y)) return LISPM_SYM_NIL;
-  Sym *cx = lispm_st_obj_unpack(x), *cy = lispm_st_obj_unpack(y);
-  return cx[0] == cy[0] && cx[1] == cy[1];
+  return lispm_sym_is_atom(x) && x == y ? LISPM_SYM_T : LISPM_SYM_NIL;
 }
 static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, LISPM_ERR_EVAL, "panic: ", a); }
 
@@ -391,7 +385,7 @@ static int is_lambda_or_builtin_fn(Sym f, const struct Builtin **bi) {
 }
 static Sym evapply(Sym e) {
   Sym f, fn, a, *cons;
-  cons = lispm_cons_unpack_user(e), f = cons[0], a = cons[1];
+  cons = lispm_cons_unpack_user(e), fn = f = cons[0], a = cons[1];
   int eval_args = 0;
   if (lispm_sym_is_cons(f)) { /* rewrite nested calls */
     fn = f = eval0(f);

@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 
+#if LISPM_CONFIG_VERBOSE
 struct CallFrame {
   Sym fn;
   Sym resolved;
@@ -13,6 +14,7 @@ struct CallFrame {
 enum { STACK_TRACE_DEPTH = 32 };
 static struct CallFrame stack_trace[STACK_TRACE_DEPTH];
 static unsigned stack_trace_depth;
+#endif
 
 static const char *literal_name(Sym l) { return lispm.strings + lispm_literal_str_offs(l); }
 
@@ -43,12 +45,6 @@ void lispm_print_short(Sym sym) {
   }
   if (lispm_sym_is_shortnum(sym)) {
     fprintf(stderr, "%u", lispm_shortnum_val(sym));
-    return;
-  }
-  if (lispm_sym_is_longnum(sym)) {
-    Sym *hilo = lispm_st_obj_unpack(sym);
-    unsigned val = (lispm_shortnum_val(hilo[0]) << LISPM_SHORTNUM_BITS) | lispm_shortnum_val(hilo[1]);
-    fprintf(stderr, "%u", val);
     return;
   }
   if (lispm_sym_is_builtin_sym(sym)) {
@@ -100,6 +96,7 @@ void lispm_print_short(Sym sym) {
   fprintf(stderr, lispm_sym_is_nil(sym) ? ")" : "]");
 }
 
+#if LISPM_CONFIG_VERBOSE
 static void print_call_frame(struct CallFrame frame) {
   fprintf(stderr, "  ");
   lispm_print_short(frame.fn);
@@ -128,6 +125,7 @@ static void trace_apply_enter(Sym f, Sym resolved, Sym a) {
 }
 
 static void trace_apply_leave() { --stack_trace_depth; }
+#endif
 
 void lispm_trace_full(void) {
 #if LISPM_CONFIG_VERBOSE

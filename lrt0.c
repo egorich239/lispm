@@ -44,23 +44,6 @@ static inline struct Span lispm_span_unpack_user(Sym span) {
   return lispm_span_unpack(span);
 }
 
-/* TODO: these probably belong to lispm.h */
-static unsigned num_decode(Sym s) {
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(s) || lispm_sym_is_longnum(s), LISPM_ERR_EVAL, "expected a number, got: ", s);
-  if (lispm_sym_is_shortnum(s)) return lispm_shortnum_val(s);
-
-  Sym hi, lo, *cons;
-  cons = lispm_st_obj_unpack(s), hi = cons[0], lo = cons[1];
-  LISPM_ASSERT(lispm_sym_is_shortnum(lo));
-  return (lispm_shortnum_val(hi) << LISPM_SHORTNUM_BITS) | lispm_shortnum_val(lo);
-}
-static Sym num_encode(unsigned e) {
-  if (lispm_shortnum_can_represent(e)) return lispm_make_shortnum(e);
-  Sym arr[2] = {lispm_make_shortnum(e >> LISPM_SHORTNUM_BITS),
-                lispm_make_shortnum(e & ((1u << LISPM_SHORTNUM_BITS) - 1))};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_LONGNUM, arr);
-}
-
 static Sym PROGRAM(Sym e) {
   LISPM_EVAL_CHECK(lispm_sym_is_nil(e), LISPM_ERR_EVAL, "no arguments expected, got: ", e);
   return lispm_span_alloc(lispm_make_span(PAGE_PROGRAM, 0, M.program_end - M.program));
@@ -112,8 +95,8 @@ static Sym SPAN(Sym args) {
   unsigned src_offs = lispm_shortnum_val(res.offs);
   unsigned src_len = lispm_shortnum_val(res.len);
 
-  unsigned res_begin = num_decode(begin);
-  unsigned res_end = !lispm_sym_is_nil(end) ? num_decode(end) : src_len;
+  unsigned res_begin = lispm_shortnum_val(begin);
+  unsigned res_end = !lispm_sym_is_nil(end) ? lispm_shortnum_sval(end) : src_len;
   if (((int)res_end) < 0) res_end = src_len + res_end;
   LISPM_EVAL_CHECK(res_begin <= res_end && res_end <= src_len, LISPM_ERR_EVAL, "subspan does not fit: ", span);
 
@@ -149,60 +132,66 @@ static Sym IMPORT(Sym ptr) {
   return lispm_eval(begin, end);
 }
 
-static Sym BAND(Sym a) {
-  Sym p, q;
-  lispm_args_unpack2(a, &p, &q);
-  return num_encode(num_decode(p) & num_decode(q));
-}
-static Sym BOR(Sym a) {
-  Sym p, q;
-  lispm_args_unpack2(a, &p, &q);
-  return num_encode(num_decode(p) | num_decode(q));
-}
-static Sym BXOR(Sym a) {
-  Sym p, q;
-  lispm_args_unpack2(a, &p, &q);
-  return num_encode(num_decode(p) ^ num_decode(q));
-}
-static Sym BNOT(Sym a) {
-  a = lispm_evquote(a);
-  return num_encode(~num_decode(a));
-}
-
 LISPM_BUILTINS_EXT(LRT0_SYMS) = {{"MODULO"}};
 
-static int arith_unpack(Sym a, unsigned *p, unsigned *q) {
+typedef enum { OP_OR, OP_AND, OP_XOR, OP_ADD, OP_SUB, OP_MUL } BinOp;
+static int binop_unpack(Sym a, int arith, unsigned *p, unsigned *q) {
   Sym *pq = lispm_cons_unpack_user(a);
   Sym *qm = lispm_cons_unpack_user(pq[1]);
-  *p = num_decode(pq[0]), *q = num_decode(qm[0]);
+  *p = pq[0], *q = qm[0];
   if (lispm_sym_is_nil(qm[1])) return 0;
+  LISPM_EVAL_CHECK(arith, LISPM_ERR_EVAL, "exactly two operands expected, got: ", a);
+
   Sym m = lispm_evquote(qm[1]);
   LISPM_EVAL_CHECK(m == lispm_builtin_as_sym(LRT0_SYMS), LISPM_ERR_EVAL,
                    "only MODULO is allowed as third argument, got: ", m);
   return 1;
 }
-static Sym ADD(Sym a) {
-  unsigned p, q, r;
-  int is_modulo = arith_unpack(a, &p, &q);
-  int overflow = __builtin_uadd_overflow(p, q, &r);
-  LISPM_EVAL_CHECK(is_modulo || !overflow, LISPM_ERR_EVAL, "integer overflow, args: ", a);
-  return num_encode(r);
+static Sym binop(Sym args, BinOp op, int arith) {
+  Sym p, q;
+  int mod2 = binop_unpack(args, arith, &p, &q);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL,
+                   "both operands must be numeric, got: ", args);
+  int overflow;
+  Sym res;
+  switch (op) {
+  case OP_OR:
+    return lispm_shortnum_bitwise_or(p, q);
+  case OP_AND:
+    return lispm_shortnum_bitwise_and(p, q);
+  case OP_XOR:
+    return lispm_shortnum_bitwise_xor(p, q);
+  case OP_ADD:
+    res = lispm_shortnum_add(p, q, &overflow);
+    break;
+  case OP_SUB:
+    res = lispm_shortnum_sub(p, q, &overflow);
+    break;
+  case OP_MUL:
+    res = lispm_shortnum_mul(p, q, &overflow);
+    break;
+  }
+  LISPM_EVAL_CHECK(mod2 || !overflow, LISPM_ERR_EVAL, "integer overflow, args: ", args);
+  return res;
 }
-static Sym MUL(Sym a) {
-  unsigned p, q, r;
-  int is_modulo = arith_unpack(a, &p, &q);
-  int overflow = __builtin_umul_overflow(p, q, &r);
-  LISPM_EVAL_CHECK(is_modulo || !overflow, LISPM_ERR_EVAL, "integer overflow, args: ", a);
-  return num_encode(r);
+
+static Sym BAND(Sym a) { return binop(a, OP_AND, 0); }
+static Sym BOR(Sym a) { return binop(a, OP_OR, 0); }
+static Sym BXOR(Sym a) { return binop(a, OP_XOR, 0); }
+static Sym ADD(Sym a) { return binop(a, OP_ADD, 1); }
+static Sym SUB(Sym a) { return binop(a, OP_SUB, 1); }
+static Sym MUL(Sym a) { return binop(a, OP_MUL, 1); }
+
+static Sym BNOT(Sym val) {
+  val = lispm_evquote(val);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(val), LISPM_ERR_EVAL, "numeric value expected, got: ", val);
+  return lispm_shortnum_bitwise_not(val);
 }
-static Sym SUB(Sym a) {
-  unsigned p, q, r;
-  int is_modulo = arith_unpack(a, &p, &q);
-  int overflow = __builtin_usub_overflow(p, q, &r);
-  LISPM_EVAL_CHECK(is_modulo || !overflow, LISPM_ERR_EVAL, "integer overflow, args: ", a);
-  return num_encode(r);
+static Sym NEG(Sym val) {
+  val = lispm_evquote(val);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(val), LISPM_ERR_EVAL, "numeric value expected, got: ", val);
+  return lispm_shortnum_neg(val);
 }
-static Sym NEG(Sym a) { return num_encode(-num_decode(lispm_evquote(a))); }
 
 LISPM_BUILTINS_EXT(LRT0) = {
     {"program", PROGRAM},

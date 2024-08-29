@@ -18,6 +18,7 @@ unsigned htable[4 * 1024 * 1024];
 
 static int sym_equal(Sym a, Sym b) {
   if (lispm_sym_is_atom(a) && lispm_sym_is_atom(b)) return a == b;
+  if (lispm_sym_is_error(a) && lispm_sym_is_error(b)) return a == b;
   if (lispm_sym_is_atom(a) || lispm_sym_is_atom(b)) return 0;
   if (!lispm_sym_is_cons(a) || !lispm_sym_is_cons(b)) return 0;
 
@@ -55,12 +56,21 @@ struct Lispm lispm = {
 
 #define M lispm
 
+/* we have to wrap parse calls into try block, otherwise lex/parse error segfault */
+static Sym parse_result;
+static void parse_void(void) {
+  parse_result = LISPM_ERR_PARSE;
+  parse_result = lispm_parse(M.pc, M.program_end);
+}
+
 int main(int argc, char *argv[]) {
   int result = 0;
   lispm_init();
   for (; M.pc < M.program_end; ++M.pc) {
     if (*M.pc <= ' ') continue;
-    Sym testname = lispm_parse(M.pc, M.program_end);
+    Sym testname;
+    lispm_rt_try(parse_void);
+    testname = parse_result;
     if (!lispm_sym_is_literal(testname)) {
       fprintf(stderr, "Expected a test name literal, got: ");
       lispm_print_short(testname);
@@ -68,7 +78,14 @@ int main(int argc, char *argv[]) {
       return 1;
     }
     Sym actual = lispm_exec();
-    Sym expected = lispm_parse(M.pc, M.program_end);
+    Sym expected;
+    lispm_rt_try(parse_void);
+    expected = parse_result;
+
+    if (actual == LISPM_ERR_PARSE || expected == LISPM_ERR_PARSE) {
+      fprintf(stderr, "Lexing or parsing error encountered; terminating\n");
+      return 1;
+    }
 
     lispm_print_short(testname);
     if (sym_equal(actual, expected)) {

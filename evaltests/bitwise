@@ -1,0 +1,31 @@
+bitwise:bitwise-not0
+(bitwise-not 0)
+1073741823
+
+bitwise:bitwise-not1
+(bitwise-not 1)
+1073741822
+
+bitwise:bitwise-or1
+(bitwise-or 4 8)
+12
+
+bitwise:bitwise-or2
+(bitwise-or 6 34)
+38
+
+bitwise:bitwise-and1
+(bitwise-and 4 8)
+0
+
+bitwise:bitwise-and2
+(bitwise-and 6 34)
+2
+
+bitwise:bitwise-xor1
+(bitwise-xor 4 8)
+12
+
+bitwise:bitwise-xor2
+(bitwise-xor 6 34)
+36

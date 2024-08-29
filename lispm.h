@@ -41,11 +41,14 @@ extern __attribute__((noreturn)) void lispm_rt_abort(void);
  *   Stack objects:
  * -    <CONS> 00 10: pair car, cdr;
  * -  <LAMBDA> 01 10: triplet captures, args, body;
- * -    <WORD> 10 10: pair of short unsigned's representing a full words, in HI:LO order.
+ * -    <SPTR> 10 10: an extension stack object, consisting of exactly TWO words starting
+ *                    at SPTR position;
+ * -    <SPTR> 11 10: an extension stack object, consisting of exactly THREE words starting
+ *                    at SPTR position;
  *
- *   The forth stack object kind is not used by lispm.c but if you link with lrt0.c,
- *   it uses it to describe memory spans:
- * -     <SPAN> 11 10: triplet of short unsigned's page, offs, length; see lrt0.h for more.
+ * Extensions must adhere to the symbol layout in the part of the stack they use
+ * (i.e they must put valid symbols on the stack), because garbage collector assumes that
+ * everything it ever observes on the stack is some kind of Sym.
  *
  *   Special symbols.
  *
@@ -200,19 +203,60 @@ static inline unsigned lispm_shortnum_val(Sym s) {
   LISPM_ASSERT(lispm_sym_is_shortnum(s));
   return s >> 2;
 }
+static inline unsigned lispm_shortnum_sval(Sym s) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(s));
+  return ((int)s) >> 2;
+}
+static inline Sym lispm_shortnum_bitwise_not(Sym p) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(p));
+  return ~p - 1;
+}
+static inline Sym lispm_shortnum_bitwise_or(Sym p, Sym q) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q));
+  return p | q;
+}
+static inline Sym lispm_shortnum_bitwise_xor(Sym p, Sym q) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q));
+  return p ^ q ^ 1u;
+}
+static inline Sym lispm_shortnum_bitwise_and(Sym p, Sym q) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q));
+  return p & q;
+}
+static inline Sym lispm_shortnum_neg(Sym p) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(p));
+  return ~p + 3;  /* (~p + (1 << 2)) - 1*/
+}
+static inline Sym lispm_shortnum_add(Sym p, Sym q, int *overflow) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q));
+  Sym res;
+  *overflow = __builtin_uadd_overflow(p, q, &res);
+  return res - 1;
+}
+static inline Sym lispm_shortnum_sub(Sym p, Sym q, int *overflow) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q));
+  unsigned res;
+  *overflow = __builtin_usub_overflow(lispm_shortnum_val(p), lispm_shortnum_val(q), &res);
+  return lispm_make_shortnum(res & ~LISPM_UPPER_BITS(2));
+}
+static inline Sym lispm_shortnum_mul(Sym p, Sym q, int *overflow) {
+  LISPM_ASSERT(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q));
+  unsigned res;
+  *overflow =
+      __builtin_umul_overflow(lispm_shortnum_val(p), lispm_shortnum_val(q), &res) || !lispm_shortnum_can_represent(res);
+  return lispm_make_shortnum(res & ~LISPM_UPPER_BITS(2));
+}
 
 /* stack objects */
 enum {
   LISPM_ST_OBJ_CONS = 2u,
   LISPM_ST_OBJ_LAMBDA = 6u,
-  LISPM_ST_OBJ_LONGNUM = 10u,
 
-  /* Extension objects are not handled by lispm.c, and must adhere to some rules:
-   * 1. They must allocate exactly 3 words on stack.
-   * 2. These three words must contain Sym's, in particular the layout of these words
-   *    must adhere to Sym rules. That is because garbage collector relies on it.
-   */
-  LISPM_ST_OBJ_EXT = 14u,
+  /* an extension object, taking TWO words on stack */
+  LISPM_ST_OBJ_EXT_2 = 10u,
+
+  /* an extension object, taking THREE words on stack */
+  LISPM_ST_OBJ_EXT_3 = 14u,
 };
 static inline int lispm_sym_is_st_obj(Sym s) { return (s & 3u) == 2; }
 static inline Sym lispm_make_st_obj(unsigned k, unsigned st_offs) {
@@ -236,7 +280,7 @@ static inline Sym lispm_st_obj_offset_by(Sym s, unsigned offs) {
 }
 
 /* atoms */
-static inline int lispm_sym_is_atom(Sym s) { return (s & 2u) == 0 || (s & 15u) == LISPM_ST_OBJ_LONGNUM; }
+static inline int lispm_sym_is_atom(Sym s) { return (s & 2u) == 0; }
 
 /* cons */
 static inline Sym lispm_make_cons(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_CONS, st_offs); }
@@ -245,10 +289,6 @@ static inline int lispm_sym_is_cons(Sym s) { return lispm_st_obj_kind(s) == LISP
 /* lambda */
 static inline Sym lispm_make_lambda(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_LAMBDA, st_offs); }
 static inline int lispm_sym_is_lambda(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_LAMBDA; }
-
-/* longnum (2 or more words, similar to cons) */
-static inline Sym lispm_make_longnum(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_LONGNUM, st_offs); }
-static inline int lispm_sym_is_longnum(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_LONGNUM; }
 
 /* specials, ctors are defined in macros, to be compile time consts */
 static inline int lispm_sym_is_special(Sym s) { return (s & 3u) == 3u; }
