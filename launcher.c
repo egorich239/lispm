@@ -25,7 +25,6 @@ struct Lispm lispm = {
     /*strings*/
     .strings = strings,
     .strings_end = strings + sizeof(strings),
-    .tp = strings + LISPM_DIAG_SIZE,
 
     /*program*/
     .program = 0,
@@ -58,12 +57,5 @@ int main(int argc, char *argv[]) {
   lispm_trace_full();
   lispm_init();
   Sym result = lispm_exec();
-  if (lispm_sym_is_error(result)) {
-    fprintf(stderr, "%s", lispm_error_message_get());
-    lispm_print_short(lispm.stack[1]);
-    fprintf(stderr, "\n");
-    // lispm_print_stack_trace();
-  } else {
-    lispm_dump(result);
-  }
+  lispm_dump(result);
 }

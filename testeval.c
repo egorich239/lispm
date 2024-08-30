@@ -38,7 +38,7 @@ struct Lispm lispm = {
     /*strings*/
     .strings = strings,
     .strings_end = strings + sizeof(strings),
-    .tp = strings + LISPM_DIAG_SIZE,
+    .tp = strings,
 
     /*program*/
     .program = _binary_evaltests_txt_start,
@@ -66,6 +66,7 @@ static void parse_void(void) {
 int main(int argc, char *argv[]) {
   int result = 0;
   lispm_init();
+  lispm_trace();
   for (; M.pc < M.program_end; ++M.pc) {
     if (*M.pc <= ' ') continue;
     Sym testname;

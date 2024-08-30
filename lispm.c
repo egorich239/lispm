@@ -2,15 +2,6 @@
 
 #define M lispm
 
-#if LISPM_CONFIG_VERBOSE
-#define LISPM_TRACE(event, ...)                                                                                        \
-  do {                                                                                                                 \
-    if (M.trace.event) M.trace.event(__VA_ARGS__);                                                                     \
-  } while (0)
-#else
-#define LISPM_TRACE(...) ((void)0)
-#endif
-
 /* error reporting */
 __attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx) {
   LISPM_ASSERT(M.stack);
@@ -442,6 +433,8 @@ static void lispm_main(void) {
 
 void lispm_init(void) {
   LISPM_ASSERT(lispm_is_valid_config());
+  M.tp = M.strings + 4; /* we use zero as sentinel value for missing entry in htable, 
+                           hence no value can have a zero offset into the strings table */
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
   M.htable_index_shift = __builtin_clz(M.htable_index_size) + 1;
 

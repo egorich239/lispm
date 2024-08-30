@@ -85,9 +85,10 @@ struct __attribute__((aligned(16))) Builtin {
 #define LISPM_BUILTINS_EXT(name)                                                                                       \
   static const struct Builtin name[] __attribute__((section(".lispm.rodata.builtins.ext"), aligned(16), used))
 
-struct TraceCbs {
+struct LispmTraceCallbacks {
   void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
   void (*apply_leave)(void);
+  void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
 };
 
 /* State of LISPM */
@@ -106,7 +107,8 @@ struct Lispm {
   char *strings;
   /* Pointer past the end of strings storage. */
   char *strings_end;
-  /* Pointer past the end of the used part of string storage. */
+  /* Pointer past the end of the used part of string storage.
+     Initialized by lispm_init(). */
   char *tp;
 
   /* Beginning of the program page. */
@@ -126,17 +128,13 @@ struct Lispm {
   int htable_index_shift;
 
 #if LISPM_CONFIG_VERBOSE
-  struct TraceCbs trace;
+  struct LispmTraceCallbacks trace;
 #endif
 };
 
 /* The very bottom of the stack can be used for special purposes.
    This value defines the size of that bottom part. */
 #define LISPM_PP_OFFSET 64u
-
-/* The initial part of the strings table contains the error message string. */
-#define LISPM_DIAG_SIZE 256u
-_Static_assert(LISPM_DIAG_SIZE > 0, "error message size must be non-zero");
 
 /* Hash table uses open addressing.
    This value limits how many slots are looked up before we give up. */
@@ -160,10 +158,10 @@ static inline int lispm_is_power_of_two(unsigned i) { return i && !(i & (i - 1))
 static inline int lispm_shortnum_can_represent(unsigned val) { return (val & LISPM_UPPER_BITS(2)) == 0; }
 static inline int lispm_is_valid_config(void) {
   const struct Lispm *m = &lispm;
-  return m->stack + LISPM_PP_OFFSET <= m->pp && m->pp < m->sp               /**/
-         && m->strings + LISPM_DIAG_SIZE <= m->tp && m->tp < m->strings_end /**/
-         && m->program <= m->pc && m->pc < m->program_end                   /**/
-         && m->htable + 1024 <= m->htable_end                               /**/
+  return m->stack + LISPM_PP_OFFSET <= m->pp && m->pp < m->sp /**/
+         && m->strings + 8 <= m->strings_end                  /**/
+         && m->program <= m->pc && m->pc < m->program_end     /**/
+         && m->htable + 1024 <= m->htable_end                 /**/
          && lispm_is_power_of_two(m->htable_end - m->htable)
          /* we also want all offsets to fit into short unsigned */
          && lispm_shortnum_can_represent(m->sp - m->stack)            /**/
@@ -225,7 +223,7 @@ static inline Sym lispm_shortnum_bitwise_and(Sym p, Sym q) {
 }
 static inline Sym lispm_shortnum_neg(Sym p) {
   LISPM_ASSERT(lispm_sym_is_shortnum(p));
-  return ~p + 3;  /* (~p + (1 << 2)) - 1*/
+  return ~p + 3; /* (~p + (1 << 2)) - 1*/
 }
 static inline Sym lispm_shortnum_add(Sym p, Sym q, int *overflow) {
   LISPM_ASSERT(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q));
@@ -322,26 +320,24 @@ static inline int lispm_sym_is_error(Sym s) {
 }
 
 /* Internal API */
-static inline void lispm_error_message_set(const char *msg) {
-  int i = 0;
-  while (i + 1 < LISPM_DIAG_SIZE && (lispm.strings[i++] = *msg++)) {}
-}
-
-/* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
-#if !LISPM_CONFIG_VERBOSE
-#define LISPM_EVAL_CHECK(cond, err, diag, ctx)                                                                         \
+#if LISPM_CONFIG_VERBOSE
+#define LISPM_TRACE(event, ...)                                                                                        \
   do {                                                                                                                 \
-    if (!(cond)) lispm_report_error(err, ctx);                                                                         \
+    if (M.trace.event) M.trace.event(__VA_ARGS__);                                                                     \
   } while (0)
 #else
+#define LISPM_TRACE(...) ((void)0)
+#endif
+
+/* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
 #define LISPM_EVAL_CHECK(cond, err, diag, ctx)                                                                         \
   do {                                                                                                                 \
     if (!(cond)) {                                                                                                     \
-      lispm_error_message_set("Failed assertion: " diag);                                                              \
+      LISPM_TRACE(panic, __FILE__, __LINE__, diag, ctx);                                                               \
       lispm_report_error(err, ctx);                                                                                    \
     }                                                                                                                  \
   } while (0)
-#endif
+
 __attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx);
 
 /* pc must be between M.program and M.program_end */

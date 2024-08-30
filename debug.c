@@ -97,6 +97,11 @@ void lispm_print_short(Sym sym) {
 }
 
 #if LISPM_CONFIG_VERBOSE
+static void trace_panic(const char *file, unsigned line, const char *msg, Sym ctx) {
+  fprintf(stderr, "%s:%u: %s", file, line, msg);
+  lispm_print_short(ctx);
+  fprintf(stderr, "\n");
+}
 static void print_call_frame(struct CallFrame frame) {
   fprintf(stderr, "  ");
   lispm_print_short(frame.fn);
@@ -130,6 +135,7 @@ static void trace_apply_leave() { --stack_trace_depth; }
 void lispm_trace_full(void) {
 #if LISPM_CONFIG_VERBOSE
   lispm.trace.apply_enter = trace_full_apply_enter;
+  lispm.trace.panic = trace_panic;
 #endif
 }
 
@@ -137,6 +143,7 @@ void lispm_trace(void) {
 #if LISPM_CONFIG_VERBOSE
   lispm.trace.apply_enter = trace_apply_enter;
   lispm.trace.apply_leave = trace_apply_leave;
+  lispm.trace.panic = trace_panic;
 #endif
 }
 
@@ -196,5 +203,3 @@ void lispm_dump(Sym sym) {
     fprintf(stderr, "\n");
   }
 }
-
-const char *lispm_error_message_get(void) { return lispm.strings; }
