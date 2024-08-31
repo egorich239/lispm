@@ -136,6 +136,14 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Lexing or parsing error encountered; terminating\n");
       return 1;
     }
+    if (!sym_equal(actual, expected)) {
+      fprintf(stderr, "  expected result: ");
+      lispm_print_short(expected);
+      fprintf(stderr, "\n    actual result: ");
+      lispm_print_short(actual);
+      fprintf(stderr, "\n");
+      failure = 1;
+    }
   }
   return failure;
 }
