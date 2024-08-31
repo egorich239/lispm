@@ -3,8 +3,6 @@
 set -e
 
 readonly FILES=(lispm.o lrt0.o)
-make clean
-make ${FILES[@]}
 
 for f in ${FILES[@]} ; do
     echo $f
