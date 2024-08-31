@@ -262,7 +262,9 @@ static Sym lispm_evlambda(Sym t) {
   Sym p, b;
   lispm_args_unpack2(t, &p, &b);
   Sym arr[3] = {lispm_evcap_lambda(t, LISPM_SYM_NIL), p, b};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA, arr);
+  Sym lambda = lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA, arr);
+  LISPM_TRACE(lambda_cons, lambda);
+  return lambda;
 }
 static Sym lispm_evcap_let(Sym syn, Sym c0) {
   Sym asgns, asgn, expr, e1, name, c = c0, *cons, shadow = LISPM_SYM_NIL;
