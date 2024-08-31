@@ -35,7 +35,7 @@ extern __attribute__((noreturn)) void lispm_rt_abort(void);
  * -               0: LISPM_SYM_NIL
  * -    <OFFS:30> 00: literal with the given <OFFS> in htable;
  *                    each literal consumes two words in htable:
- *                    0: b0 <LIT:30> - bit 'b' is 0 for builtin literals, else 1;
+ *                    0: <LIT:30> w0 - bit 'w' is 0 for readonly literals, else 1;
  *                                     LIT is offset of NUL-terminated representation
  *                                     of literal in strings table.
  *                    1: the currently assigned value of the literal.
@@ -181,7 +181,7 @@ static inline unsigned lispm_literal_ht_offs(Sym s) {
 }
 static inline unsigned lispm_literal_str_offs(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
-  return lispm.htable[lispm_literal_ht_offs(s)] & ~LISPM_UPPER_BITS(1); /* TODO: name these upper bits */
+  return lispm.htable[lispm_literal_ht_offs(s)] >> 2;
 }
 
 /* unsigneds */

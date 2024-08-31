@@ -44,7 +44,7 @@ static Sym gc(Sym root, unsigned high_mark) {
 }
 
 /* htable functions */
-#define LITERAL_NBUILTIN_BIT LISPM_UPPER_BITS(1)
+static inline int htable_is_literal(unsigned key) { return !(key & 1); }
 static inline unsigned hashf(const char *b, const char *e, unsigned seed) {
   unsigned hash = seed;
   while (b != e)
@@ -59,9 +59,9 @@ static inline int str_eq(const char *b, const char *e, const char *h) {
     if (*b++ != *h++) return 0;
   return !*h;
 }
-static inline Sym lispm_literal_is_builtin(Sym s) {
+static inline Sym lispm_literal_is_assignable(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
-  return !(M.htable[lispm_literal_ht_offs(s)] & LITERAL_NBUILTIN_BIT);
+  return (M.htable[lispm_literal_ht_offs(s)] & 3) == 2;
 }
 static const struct Builtin *builtin(Sym s) {
   LISPM_ASSERT(lispm_sym_is_builtin_sym(s));
@@ -75,7 +75,7 @@ static inline Sym lispm_literal_get_assoc(Sym s) {
   return a;
 }
 static inline Sym lispm_literal_set_assoc(Sym s, Sym assoc) {
-  LISPM_EVAL_CHECK(!lispm_literal_is_builtin(s), s, illegal_bind, s, assoc);
+  LISPM_EVAL_CHECK(lispm_literal_is_assignable(s), s, illegal_bind, s, assoc);
   Sym *a              = M.htable + (lispm_literal_ht_offs(s) + 1);
   const Sym old_assoc = *a;
   return *a           = assoc, old_assoc;
@@ -87,13 +87,14 @@ static Sym ensure(const char *b, const char *e) {
     offset = hashf(b, e, offset);
     entry  = M.htable + (2 * offset);
     if (!*entry) goto ensure_insert; /* empty slot */
-    if (str_eq(b, e, M.strings + (*entry & ~LITERAL_NBUILTIN_BIT))) return lispm_make_literal(2 * offset); /* found! */
+    if (!htable_is_literal(*entry)) continue;
+    if (str_eq(b, e, M.strings + (*entry >> 2))) return lispm_make_literal(2 * offset); /* found! */
   }
   LISPM_EVAL_CHECK(0, LISPM_SYM_NIL, oom_htable);
 
 ensure_insert:
   LISPM_EVAL_CHECK(M.tp + (e - b + 1) <= M.strings_end, LISPM_SYM_NIL, oom_strings);
-  entry[0] = (M.tp - M.strings) | LITERAL_NBUILTIN_BIT;
+  entry[0] = ((M.tp - M.strings) << 2) | 2;
   entry[1] = LISPM_SYM_NO_ASSOC;
   while (b != e)
     *M.tp++ = *b++;
@@ -313,7 +314,7 @@ static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 static Sym evcap0(Sym syn, Sym caps) {
   if (lispm_sym_is_shortnum(syn)) return caps; /* unsigned: no need to capture */
   if (lispm_sym_is_literal(syn)) {
-    if (lispm_literal_is_builtin(syn)) return caps; /* builtins: no need to capture */
+    if (!lispm_literal_is_assignable(syn)) return caps; /* builtins: no need to capture */
     const Sym a = lispm_literal_get_assoc(syn);
     if (a == LISPM_SYM_FREE || a == LISPM_SYM_BOUND) return caps; /* already captured */
     /* not captured yet => capture */
@@ -434,7 +435,7 @@ void lispm_init(void) {
     const char *n   = bi->name;
     Sym s           = ensure(n, n + __builtin_strlen(n));
     unsigned *entry = M.htable + lispm_literal_ht_offs(s);
-    entry[0] &= ~LITERAL_NBUILTIN_BIT;
+    entry[0] &= ~2u;
     entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     if (bi->store) *bi->store = s;
   }
