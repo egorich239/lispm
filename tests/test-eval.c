@@ -9,8 +9,8 @@
 
 extern struct Builtin lispm_builtins[];
 
-extern const char _binary_evaltests_txt_start[];
-extern const char _binary_evaltests_txt_end[];
+extern const char _binary_test_eval_tests_txt_start[];
+extern const char _binary_test_eval_tests_txt_end[];
 
 Sym stack[4 * 1024 * 1024];
 char strings[16 * 1024 * 1024];
@@ -32,26 +32,24 @@ struct Lispm lispm = {
 
     /*stack*/
     .stack = stack,
-    .sp = stack + (sizeof(stack) / sizeof(*stack)),
-    .pp = stack + LISPM_PP_OFFSET,
+    .sp    = stack + (sizeof(stack) / sizeof(*stack)),
+    .pp    = stack + LISPM_PP_OFFSET,
 
     /*strings*/
-    .strings = strings,
+    .strings     = strings,
     .strings_end = strings + sizeof(strings),
-    .tp = strings,
+    .tp          = strings,
 
     /*program*/
-    .program = _binary_evaltests_txt_start,
-    .program_end = _binary_evaltests_txt_end,
-    .pc = _binary_evaltests_txt_start,
+    .program     = _binary_test_eval_tests_txt_start,
+    .program_end = _binary_test_eval_tests_txt_end,
+    .pc          = _binary_test_eval_tests_txt_start,
 
     /*htable*/
-    .htable = htable,
+    .htable     = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
 
-#if LISPM_CONFIG_VERBOSE
     .trace = {},
-#endif
 };
 
 #define M lispm
@@ -64,7 +62,7 @@ static void parse_void(void) {
 }
 
 int main(int argc, char *argv[]) {
-  int result = 0;
+  int result  = 0;
   int comment = 0;
   lispm_init();
   lispm_trace();
@@ -75,6 +73,7 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (*M.pc <= ' ') continue;
+    M.sp = M.stack + (sizeof(stack) / sizeof(*stack));
     Sym testname;
     lispm_rt_try(parse_void);
     testname = parse_result;

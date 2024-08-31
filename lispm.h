@@ -1,7 +1,11 @@
 #pragma once
 
-#define LISPM_CONFIG_ASSERT  1
+#ifndef LISPM_CONFIG_ASSERT
+#define LISPM_CONFIG_ASSERT 1
+#endif
+#ifndef LISPM_CONFIG_VERBOSE
 #define LISPM_CONFIG_VERBOSE 1
+#endif
 
 /* Abort is an external symbol provided by runtime */
 extern __attribute__((noreturn)) void lispm_rt_abort(void);
@@ -88,6 +92,7 @@ struct __attribute__((aligned(16))) Builtin {
 struct LispmTraceCallbacks {
   void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
   void (*apply_leave)(void);
+  void (*lambda_cons)(Sym lambda);
   void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
 };
 
@@ -247,7 +252,7 @@ static inline Sym lispm_shortnum_mul(Sym p, Sym q, int *overflow) {
 
 /* stack objects */
 enum {
-  LISPM_ST_OBJ_CONS = 2u,
+  LISPM_ST_OBJ_CONS   = 2u,
   LISPM_ST_OBJ_LAMBDA = 6u,
 
   /* an extension object, taking TWO words on stack */
@@ -303,17 +308,19 @@ Sym lispm_builtin_as_sym(const struct Builtin *bi);
 /* special values */
 #define LISPM_MAKE_SPECIAL_VALUE(val) (((val) << 4) | 15u)
 
-#define LISPM_SYM_NIL 0u
-#define LISPM_SYM_T   LISPM_MAKE_BUILTIN_SYM(0)
+enum {
+  LISPM_SYM_NIL = 0,
+  LISPM_SYM_T   = LISPM_MAKE_BUILTIN_SYM(0),
 
-#define LISPM_ERR_OOM   LISPM_MAKE_SPECIAL_VALUE(1024 + 0)
-#define LISPM_ERR_LEX   LISPM_MAKE_SPECIAL_VALUE(1024 + 1)
-#define LISPM_ERR_PARSE LISPM_MAKE_SPECIAL_VALUE(1024 + 2)
-#define LISPM_ERR_EVAL  LISPM_MAKE_SPECIAL_VALUE(1024 + 3)
+  LISPM_SYM_NO_ASSOC = LISPM_MAKE_SPECIAL_VALUE(0),
+  LISPM_SYM_BOUND    = LISPM_MAKE_SPECIAL_VALUE(1),
+  LISPM_SYM_FREE     = LISPM_MAKE_SPECIAL_VALUE(2),
 
-#define LISPM_SYM_BINDING  LISPM_MAKE_SPECIAL_VALUE(~0u - 2)
-#define LISPM_SYM_CAPTURED LISPM_MAKE_SPECIAL_VALUE(~0u - 1)
-#define LISPM_SYM_NO_ASSOC LISPM_MAKE_SPECIAL_VALUE(~0u - 0)
+  LISPM_ERR_OOM   = LISPM_MAKE_SPECIAL_VALUE(1024 + 0),
+  LISPM_ERR_LEX   = LISPM_MAKE_SPECIAL_VALUE(1024 + 1),
+  LISPM_ERR_PARSE = LISPM_MAKE_SPECIAL_VALUE(1024 + 2),
+  LISPM_ERR_EVAL  = LISPM_MAKE_SPECIAL_VALUE(1024 + 3),
+};
 
 static inline int lispm_sym_is_error(Sym s) {
   return lispm_sym_is_special(s) && LISPM_ERR_OOM <= s && s <= LISPM_ERR_EVAL;
