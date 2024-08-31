@@ -198,7 +198,7 @@ LISPM_BUILTINS_EXT(LRT0) = {
     {"import", IMPORT},
     {"parse", PARSE},
     {"span", SPAN},
-    {"str", STR, lispm_evcap_quote},
+    {"str", STR},
     {"chars", CHARS},
     {"getc", GETC},
     {"copy", COPY},

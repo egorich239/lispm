@@ -65,9 +65,15 @@ static void parse_void(void) {
 
 int main(int argc, char *argv[]) {
   int result = 0;
+  int comment = 0;
   lispm_init();
   lispm_trace();
   for (; M.pc < M.program_end; ++M.pc) {
+    if (*M.pc == ';') comment = 1;
+    if (comment) {
+      if (*M.pc == '\n') comment = 0;
+      continue;
+    }
     if (*M.pc <= ' ') continue;
     Sym testname;
     lispm_rt_try(parse_void);

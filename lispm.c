@@ -62,6 +62,11 @@ static inline Sym lispm_literal_is_builtin(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   return !(M.htable[lispm_literal_ht_offs(s)] & LITERAL_NBUILTIN_BIT);
 }
+static const struct Builtin *builtin(Sym s) {
+  LISPM_ASSERT(lispm_sym_is_builtin_sym(s));
+  return M.builtins + lispm_builtin_sym_offs(s);
+}
+
 static inline Sym lispm_literal_get_assoc(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   const Sym a = M.htable[lispm_literal_ht_offs(s) + 1];
@@ -310,11 +315,6 @@ static Sym EQ(Sym a) {
 }
 static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, LISPM_ERR_EVAL, "panic: ", a); }
 
-static const struct Builtin *builtin(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_builtin_sym(s));
-  return M.builtins + lispm_builtin_sym_offs(s);
-}
-
 static Sym evcap0(Sym p, Sym c) {
   if (lispm_sym_is_shortnum(p)) return c; /* unsigned: no need to capture */
   if (lispm_sym_is_literal(p)) {
@@ -330,10 +330,6 @@ static Sym evcap0(Sym p, Sym c) {
    * This implies that it either observes a (LIT ...) or ((...) ...) at this
    * point. Unless we observe the former with `LIT` special form, we treat this
    * expression as an application, and evaluate the arguments.
-   *
-   * This means that:
-   * `(LET ((AB (QUOTE T))) (QUOTE AB))` evaluates to `AB`
-   * `(LET ((AB (QUOTE T))) ((QUOTE QUOTE) AB))` evaluates to `T`
    */
   Sym a, t, b, *cons;
   cons = lispm_cons_unpack_user(p), a = cons[0], t = cons[1];
@@ -376,18 +372,15 @@ static int is_lambda_or_builtin_fn(Sym f, const struct Builtin **bi) {
 }
 static Sym evapply(Sym e) {
   Sym f, fn, a, *cons;
-  cons = lispm_cons_unpack_user(e), fn = f = cons[0], a = cons[1];
-  int eval_args = 0;
-  if (lispm_sym_is_cons(f)) { /* rewrite nested calls */
-    fn = f = eval0(f);
-    eval_args = 1;
-  }
-  if (lispm_sym_is_literal(f)) fn = lispm_literal_get_assoc(f); /* resolve literal */
+  cons = lispm_cons_unpack_user(e), f = cons[0], a = cons[1];
+  LISPM_ASSERT(lispm_sym_is_literal(f) || lispm_sym_is_cons(f));
+  /* We do not use eval0 for literals, because this place is the only one
+     where we are deliberately interested to resolve special forms. */
+  fn = lispm_sym_is_literal(f) ? lispm_literal_get_assoc(f) : eval0(f);
 
   const struct Builtin *bi = 0;
   LISPM_EVAL_CHECK(is_lambda_or_builtin_fn(fn, &bi), LISPM_ERR_EVAL, "a function expected, got: ", f);
-  if (!bi || !bi->evcap) eval_args = 1; /* not a special form */
-  if (eval_args) a = evlis(a);
+  if (!bi || !bi->evcap) a = evlis(a); /* not a special form, evaluate arguments */
   LISPM_TRACE(apply_enter, f, fn, a);
 
   if (bi) return bi->eval(a);
@@ -410,11 +403,16 @@ static Sym evapply(Sym e) {
   Sym res = eval0(b);
   return lispm_restore_shadow(s, LISPM_SYM_NIL), res;
 }
-static Sym eval0(Sym e) {
-  if (lispm_sym_is_shortnum(e)) return e;
-  if (lispm_sym_is_literal(e)) return lispm_literal_get_assoc(e);
+static Sym eval0(Sym syn) {
+  if (lispm_sym_is_shortnum(syn)) return syn;
+  if (lispm_sym_is_literal(syn)) {
+    Sym value = lispm_literal_get_assoc(syn);
+    LISPM_EVAL_CHECK(!lispm_sym_is_builtin_sym(value) || !builtin(value)->evcap, LISPM_ERR_EVAL,
+                     "special form cannot be used as a value, got: ", syn);
+    return value;
+  }
   unsigned mark = M.sp - M.stack;
-  Sym res = gc(evapply(e), mark);
+  Sym res = gc(evapply(syn), mark);
   LISPM_TRACE(apply_leave);
   return res;
 }
@@ -433,7 +431,7 @@ static void lispm_main(void) {
 
 void lispm_init(void) {
   LISPM_ASSERT(lispm_is_valid_config());
-  M.tp = M.strings + 4; /* we use zero as sentinel value for missing entry in htable, 
+  M.tp = M.strings + 4; /* we use zero as sentinel value for missing entry in htable,
                            hence no value can have a zero offset into the strings table */
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
   M.htable_index_shift = __builtin_clz(M.htable_index_size) + 1;
