@@ -110,13 +110,7 @@ Sym lispm_builtin_as_sym(const struct Builtin *bi) { return LISPM_MAKE_BUILTIN_S
 /* lexer */
 #include "lexer.inc.h"
 
-/* Lexer produces atoms: literals, short numbers, full numbers.
-   Apart from them lexer can also produce individual delimiters.
-   Lexer can never produce a builtin symbol, since it is not a lexical category.
-   Hence we reuse the namespace of builtins to represent delimiters.
-
-   TODO: allocate proper space for lexemes, for better error diagnostics */
-#define TOK_SYM(c) LISPM_MAKE_BUILTIN_SYM(((unsigned)(c)))
+#define TOK_SYM(c) LISPM_MAKE_SPECIAL_VALUE(512u + ((unsigned)(c)))
 #define TOK_LPAREN TOK_SYM('(')
 #define TOK_RPAREN TOK_SYM(')')
 #define TOK_QUOTE  TOK_SYM('\'')
