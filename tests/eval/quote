@@ -10,23 +10,21 @@ let-quote2
 (let ((AB (quote T))) (quote AB))
 AB
 
-; TODO: reintroduce. Special form cannot be used as a value
 ; Special forms must not be used as values, because this leads to undecidable
 ; problems, e.g. should we capture `A` in `(lambda (f) (f A))`? 
-;let-quote-bound
-;(let ((q quote)) (q AB))
-;!EVAL
-;
-;let-quote-bound2
-;(let ((q quote)) (((lambda () q)) AB))
-;!EVAL
+let-quote-bound
+(let ((q quote)) (q AB))
+err!
 
-; TODO: reintroduce the tests below 
-; let-quote-quote1
-; (let ((AB (quote T))) ((quote quote) AB))
-; !EVAL
+let-quote-bound2
+(let ((q quote)) (((lambda () q)) AB))
+err!
 
-; let-quote-quote2
-; (let ((AB 'T)) ('quote AB))
-; !EVAL
+let-quote-quote1
+(let ((AB (quote T))) ((quote quote) AB))
+err!
+
+let-quote-quote2
+(let ((AB 'T)) ('quote AB))
+err!
 

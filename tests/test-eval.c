@@ -18,7 +18,7 @@ unsigned htable[4 * 1024 * 1024];
 
 static int sym_equal(Sym a, Sym b) {
   if (lispm_sym_is_atom(a) && lispm_sym_is_atom(b)) return a == b;
-  if (lispm_sym_is_error(a) && lispm_sym_is_error(b)) return a == b;
+  if (a == LISPM_SYM_ERR) return htable[lispm_literal_ht_offs(b) + 1] == LISPM_SYM_ERR;
   if (lispm_sym_is_atom(a) || lispm_sym_is_atom(b)) return 0;
   if (!lispm_sym_is_cons(a) || !lispm_sym_is_cons(b)) return 0;
 
@@ -48,24 +48,28 @@ struct Lispm lispm = {
     /*htable*/
     .htable     = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
-
-    .trace = {},
 };
 
 #define M lispm
 
-/* we have to wrap parse calls into try block, otherwise lex/parse error segfault */
-static Sym parse_result;
-static void parse_void(void) {
-  parse_result = LISPM_ERR_PARSE;
-  parse_result = lispm_parse(M.pc, M.program_end);
+static void parse_error(const char *file, unsigned line, Sym tok) {
+  fprintf(stderr, "parsing failed, terminating the test; failing token: ");
+  lispm_print_short(tok);
+  fprintf(stderr, "\n");
+  exit(1);
+}
+static void lex_error(const char *file, unsigned line) {
+  fprintf(stderr, "lexing failed, terminating the test; failed around: %.12s\n", M.pc);
+  exit(1);
 }
 
 int main(int argc, char *argv[]) {
   int result  = 0;
   int comment = 0;
   lispm_init();
-  lispm_trace();
+  lispm_trace_stack();
+  lispm_trace.lex_error   = lex_error;
+  lispm_trace.parse_error = parse_error;
   for (; M.pc < M.program_end; ++M.pc) {
     if (*M.pc == ';') comment = 1;
     if (comment) {
@@ -73,25 +77,16 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (*M.pc <= ' ') continue;
-    M.sp = M.stack + (sizeof(stack) / sizeof(*stack));
-    Sym testname;
-    lispm_rt_try(parse_void);
-    testname = parse_result;
+    M.sp         = M.stack + (sizeof(stack) / sizeof(*stack));
+    Sym testname = lispm_parse(M.pc, M.program_end);
     if (!lispm_sym_is_literal(testname)) {
       fprintf(stderr, "Expected a test name literal, got: ");
       lispm_print_short(testname);
       fprintf(stderr, "\nThe layout of the test file is probably broken; terminating\n");
       return 1;
     }
-    Sym actual = lispm_exec();
-    Sym expected;
-    lispm_rt_try(parse_void);
-    expected = parse_result;
-
-    if (actual == LISPM_ERR_PARSE || expected == LISPM_ERR_PARSE) {
-      fprintf(stderr, "Lexing or parsing error encountered; terminating\n");
-      return 1;
-    }
+    Sym actual   = lispm_exec();
+    Sym expected = lispm_parse(M.pc, M.program_end);
 
     lispm_print_short(testname);
     if (sym_equal(actual, expected)) {

@@ -27,11 +27,6 @@ no-arg-lambda
 ((lambda () 3))
 3
 
-; currently broken
-; modulo-arith 
-; (- 1 2 MODULO)
-; 4294967295
-
 arith
 (+ 1 2)
 3
@@ -59,4 +54,3 @@ cond-t
 cond-quote-t
 (cond ('t 1))
 1
-

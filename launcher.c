@@ -19,25 +19,21 @@ struct Lispm lispm = {
 
     /*stack*/
     .stack = stack,
-    .sp = stack + (sizeof(stack) / sizeof(*stack)),
-    .pp = stack + LISPM_PP_OFFSET,
+    .sp    = stack + (sizeof(stack) / sizeof(*stack)),
+    .pp    = stack + LISPM_PP_OFFSET,
 
     /*strings*/
-    .strings = strings,
+    .strings     = strings,
     .strings_end = strings + sizeof(strings),
 
     /*program*/
-    .program = 0,
+    .program     = 0,
     .program_end = 0,
-    .pc = 0,
+    .pc          = 0,
 
     /*htable*/
-    .htable = htable,
+    .htable     = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
-
-#if LISPM_CONFIG_VERBOSE
-    .trace = {},
-#endif
 };
 
 int main(int argc, char *argv[]) {
@@ -50,9 +46,9 @@ int main(int argc, char *argv[]) {
   void *page_begin = mmap(NULL, stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (!page_begin) return 1;
 
-  lispm.program = page_begin;
+  lispm.program     = page_begin;
   lispm.program_end = page_begin + stat.st_size;
-  lispm.pc = lispm.program;
+  lispm.pc          = lispm.program;
 
   lispm_trace_full();
   lispm_init();

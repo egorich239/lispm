@@ -18,7 +18,7 @@ unsigned htable[4 * 1024 * 1024];
 
 static int sym_equal(Sym exp, Sym act) {
   if (lispm_sym_is_atom(act) && lispm_sym_is_atom(exp)) return exp == act;
-  if (lispm_sym_is_error(act) && lispm_sym_is_error(exp)) return exp == act;
+  if (act == LISPM_SYM_ERR) return exp == act;
   if (lispm_sym_is_cons(act) && lispm_sym_is_cons(exp)) {
     Sym *aa = lispm_st_obj_unpack(exp), *bb = lispm_st_obj_unpack(act);
     if (!sym_equal(aa[0], bb[0])) return 0;
@@ -103,19 +103,25 @@ struct Lispm lispm = {
 
 #define M lispm
 
-/* we have to wrap parse calls into try block, otherwise lex/parse error segfault */
-static Sym parse_result;
-static void parse_void(void) {
-  parse_result = LISPM_ERR_PARSE;
-  parse_result = lispm_parse(M.pc, M.program_end);
+static void parse_error(const char *file, unsigned line, Sym tok) {
+  fprintf(stderr, "parsing failed, terminating the test; failing token: ");
+  lispm_print_short(tok);
+  fprintf(stderr, "\n");
+  exit(1);
+}
+static void lex_error(const char *file, unsigned line) {
+  fprintf(stderr, "lexing failed, terminating the test; failed around: %.12s\n", M.pc);
+  exit(1);
 }
 
 int main(int argc, char *argv[]) {
   int comment = 0;
   failure     = 0;
   lispm_init();
-  lispm_trace();
-  M.trace.lambda_cons = trace_lambda;
+  lispm_trace_stack();
+  lispm_trace.lex_error   = lex_error;
+  lispm_trace.parse_error = parse_error;
+  lispm_trace.lambda_cons = trace_lambda;
   for (; M.pc < M.program_end; ++M.pc) {
     if (*M.pc == ';') comment = 1;
     if (comment) {
@@ -123,19 +129,11 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (*M.pc <= ' ') continue;
-    M.sp        = M.stack + (sizeof(stack) / sizeof(*stack));
-    next_lambda = LISPM_SYM_NIL;
-    lispm_rt_try(parse_void);
-    next_lambda = parse_result;
-    Sym actual  = lispm_exec();
-    Sym expected;
-    lispm_rt_try(parse_void);
-    expected = parse_result;
+    M.sp         = M.stack + (sizeof(stack) / sizeof(*stack));
+    next_lambda  = lispm_parse(M.pc, M.program_end);
+    Sym actual   = lispm_exec();
+    Sym expected = lispm_parse(M.pc, M.program_end);
 
-    if (next_lambda == LISPM_ERR_PARSE || actual == LISPM_ERR_PARSE || expected == LISPM_ERR_PARSE) {
-      fprintf(stderr, "Lexing or parsing error encountered; terminating\n");
-      return 1;
-    }
     if (!sym_equal(actual, expected)) {
       fprintf(stderr, "  expected result: ");
       lispm_print_short(expected);

@@ -9,22 +9,22 @@ enum {
 };
 
 static void check_access_read(unsigned access, Sym ptr) {
-  LISPM_EVAL_CHECK(access & PAGE_ACCESS_R, LISPM_ERR_EVAL, "read access denied: ", ptr);
+  LISPM_EVAL_CHECK(access & PAGE_ACCESS_R, ptr, panic, "read access denied: ", ptr);
 }
 static void check_access_write(unsigned access, Sym ptr) {
-  LISPM_EVAL_CHECK(access & PAGE_ACCESS_W, LISPM_ERR_EVAL, "write access denied: ", ptr);
+  LISPM_EVAL_CHECK(access & PAGE_ACCESS_W, ptr, panic, "write access denied: ", ptr);
 }
 static Sym lispm_literal_name_span(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
   unsigned offs = lispm_literal_str_offs(s);
-  unsigned len = __builtin_strlen(M.strings + offs);
+  unsigned len  = __builtin_strlen(M.strings + offs);
   return lispm_span_alloc(lispm_make_span(PAGE_STRINGS, offs, len));
 }
 static void *lispm_span_base(struct Span span, unsigned *len, unsigned *access) {
   void *ptr, *b, *e;
   unsigned page = lispm_shortnum_val(span.page);
-  *len = lispm_shortnum_val(span.len);
-  *access = PAGE_ACCESS_R;
+  *len          = lispm_shortnum_val(span.len);
+  *access       = PAGE_ACCESS_R;
   switch (page) {
   case PAGE_PROGRAM:
     b = (void *)M.program, e = (void *)M.program_end;
@@ -40,18 +40,18 @@ static void *lispm_span_base(struct Span span, unsigned *len, unsigned *access) 
   return ptr;
 }
 static inline struct Span lispm_span_unpack_user(Sym span) {
-  LISPM_EVAL_CHECK(lispm_sym_is_span(span), LISPM_ERR_EVAL, "span expected, got: ", span);
+  LISPM_EVAL_CHECK(lispm_sym_is_span(span), span, panic, "span expected, got: ", span);
   return lispm_span_unpack(span);
 }
 
 static Sym PROGRAM(Sym e) {
-  LISPM_EVAL_CHECK(lispm_sym_is_nil(e), LISPM_ERR_EVAL, "no arguments expected, got: ", e);
+  LISPM_EVAL_CHECK(lispm_sym_is_nil(e), e, panic, "no arguments expected, got: ", e);
   return lispm_span_alloc(lispm_make_span(PAGE_PROGRAM, 0, M.program_end - M.program));
 }
 static Sym GETC(Sym ptr) {
   ptr = lispm_evquote(ptr);
   unsigned len, access;
-  struct Span span = lispm_span_unpack_user(ptr);
+  struct Span span       = lispm_span_unpack_user(ptr);
   const unsigned char *c = lispm_span_base(span, &len, &access);
   check_access_read(access, ptr);
   if (!len) return LISPM_SYM_NIL; /* position right after the interval */
@@ -63,8 +63,8 @@ static Sym COPY(Sym a) {
   struct Span dest = lispm_span_unpack_user(d), src = lispm_span_unpack_user(s);
   unsigned dest_len, dest_access, src_len, src_access;
   void *dest_ptr = lispm_span_base(dest, &dest_len, &dest_access),
-       *src_ptr = lispm_span_base(src, &src_len, &src_access);
-  LISPM_EVAL_CHECK(src_len <= dest_len, LISPM_ERR_EVAL, "copy out of bounds for args: ", a);
+       *src_ptr  = lispm_span_base(src, &src_len, &src_access);
+  LISPM_EVAL_CHECK(src_len <= dest_len, a, panic, "copy out of bounds for args: ", a);
   check_access_read(src_access, s);
   check_access_write(dest_access, d);
   __builtin_memcpy(dest_ptr, src_ptr, src_len);
@@ -73,7 +73,7 @@ static Sym COPY(Sym a) {
 }
 static Sym STR(Sym e) {
   e = lispm_evquote(e);
-  LISPM_EVAL_CHECK(lispm_sym_is_literal(e), LISPM_ERR_EVAL, "literal expected, got: ", e);
+  LISPM_EVAL_CHECK(lispm_sym_is_literal(e), e, panic, "literal expected, got: ", e);
   return lispm_literal_name_span(e);
 }
 static Sym CHARS(Sym ptr) {
@@ -91,14 +91,14 @@ static Sym SPAN(Sym args) {
   cons = lispm_cons_unpack_user(args), span = cons[0], begin = cons[1];
   cons = lispm_cons_unpack_user(begin), begin = cons[0], end = cons[1];
   if (!lispm_sym_is_nil(end)) end = lispm_evquote(end);
-  struct Span res = lispm_span_unpack_user(span);
+  struct Span res   = lispm_span_unpack_user(span);
   unsigned src_offs = lispm_shortnum_val(res.offs);
-  unsigned src_len = lispm_shortnum_val(res.len);
+  unsigned src_len  = lispm_shortnum_val(res.len);
 
   unsigned res_begin = lispm_shortnum_val(begin);
-  unsigned res_end = !lispm_sym_is_nil(end) ? lispm_shortnum_sval(end) : src_len;
+  unsigned res_end   = !lispm_sym_is_nil(end) ? lispm_shortnum_sval(end) : src_len;
   if (((int)res_end) < 0) res_end = src_len + res_end;
-  LISPM_EVAL_CHECK(res_begin <= res_end && res_end <= src_len, LISPM_ERR_EVAL, "subspan does not fit: ", span);
+  LISPM_EVAL_CHECK(res_begin <= res_end && res_end <= src_len, span, panic, "subspan does not fit: ", span);
 
   /* we rely on the fact that all LISP-visible span constructors allocate shortnum-pages,
      and all operations can only shrink their input spans,
@@ -106,17 +106,17 @@ static Sym SPAN(Sym args) {
      although we do indirectly assert-check.
   */
   res.offs = lispm_make_shortnum(src_offs + res_begin);
-  res.len = lispm_make_shortnum(res_end - res_begin);
+  res.len  = lispm_make_shortnum(res_end - res_begin);
   return lispm_span_alloc(res);
 }
 static void lispm_program_get(Sym ptr, const char **begin, const char **end) {
-  ptr = lispm_evquote(ptr);
+  ptr                    = lispm_evquote(ptr);
   const struct Span span = lispm_span_unpack_user(ptr);
-  LISPM_EVAL_CHECK(lispm_shortnum_val(span.page) == PAGE_PROGRAM, LISPM_ERR_EVAL,
+  LISPM_EVAL_CHECK(lispm_shortnum_val(span.page) == PAGE_PROGRAM, ptr, panic,
                    "parsing non-program page is prohibited, got: ", ptr);
   unsigned access, len;
   *begin = lispm_span_base(span, &len, &access);
-  *end = *begin + len;
+  *end   = *begin + len;
 }
 static Sym PARSE(Sym ptr) {
   const char *begin, *end;
@@ -140,17 +140,17 @@ static int binop_unpack(Sym a, int arith, unsigned *p, unsigned *q) {
   Sym *qm = lispm_cons_unpack_user(pq[1]);
   *p = pq[0], *q = qm[0];
   if (lispm_sym_is_nil(qm[1])) return 0;
-  LISPM_EVAL_CHECK(arith, LISPM_ERR_EVAL, "exactly two operands expected, got: ", a);
+  LISPM_EVAL_CHECK(arith, a, panic, "exactly two operands expected, got: ", a);
 
   Sym m = lispm_evquote(qm[1]);
-  LISPM_EVAL_CHECK(m == lispm_builtin_as_sym(LRT0_SYMS), LISPM_ERR_EVAL,
+  LISPM_EVAL_CHECK(m == lispm_builtin_as_sym(LRT0_SYMS), m, panic,
                    "only MODULO is allowed as third argument, got: ", m);
   return 1;
 }
 static Sym binop(Sym args, BinOp op, int arith) {
   Sym p, q;
   int mod2 = binop_unpack(args, arith, &p, &q);
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), LISPM_ERR_EVAL,
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), args, panic,
                    "both operands must be numeric, got: ", args);
   int overflow;
   Sym res;
@@ -171,7 +171,7 @@ static Sym binop(Sym args, BinOp op, int arith) {
     res = lispm_shortnum_mul(p, q, &overflow);
     break;
   }
-  LISPM_EVAL_CHECK(mod2 || !overflow, LISPM_ERR_EVAL, "integer overflow, args: ", args);
+  LISPM_EVAL_CHECK(mod2 || !overflow, args, panic, "integer overflow, args: ", args);
   return res;
 }
 
@@ -184,30 +184,30 @@ static Sym MUL(Sym a) { return binop(a, OP_MUL, 1); }
 
 static Sym BNOT(Sym val) {
   val = lispm_evquote(val);
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(val), LISPM_ERR_EVAL, "numeric value expected, got: ", val);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(val), val, panic, "numeric value expected, got: ", val);
   return lispm_shortnum_bitwise_not(val);
 }
 static Sym NEG(Sym val) {
   val = lispm_evquote(val);
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(val), LISPM_ERR_EVAL, "numeric value expected, got: ", val);
+  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(val), val, panic, "numeric value expected, got: ", val);
   return lispm_shortnum_neg(val);
 }
 
 LISPM_BUILTINS_EXT(LRT0) = {
-    {"program", PROGRAM},
-    {"import", IMPORT},
-    {"parse", PARSE},
-    {"span", SPAN},
-    {"str", STR},
-    {"chars", CHARS},
-    {"getc", GETC},
-    {"copy", COPY},
-    {"+", ADD},
-    {"*", MUL},
-    {"-", SUB},
-    {"~", NEG},
-    {"bitwise-and", BAND},
-    {"bitwise-or", BOR},
-    {"bitwise-xor", BXOR},
-    {"bitwise-not", BNOT},
+    {"program",     PROGRAM},
+    {"import",      IMPORT },
+    {"parse",       PARSE  },
+    {"span",        SPAN   },
+    {"str",         STR    },
+    {"chars",       CHARS  },
+    {"getc",        GETC   },
+    {"copy",        COPY   },
+    {"+",           ADD    },
+    {"*",           MUL    },
+    {"-",           SUB    },
+    {"~",           NEG    },
+    {"bitwise-and", BAND   },
+    {"bitwise-or",  BOR    },
+    {"bitwise-xor", BXOR   },
+    {"bitwise-not", BNOT   },
 };

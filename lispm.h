@@ -89,13 +89,6 @@ struct __attribute__((aligned(16))) Builtin {
 #define LISPM_BUILTINS_EXT(name)                                                                                       \
   static const struct Builtin name[] __attribute__((section(".lispm.rodata.builtins.ext"), aligned(16), used))
 
-struct LispmTraceCallbacks {
-  void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
-  void (*apply_leave)(void);
-  void (*lambda_cons)(Sym lambda);
-  void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
-};
-
 /* State of LISPM */
 struct Lispm {
   /* Array of builtins, terminates with an entry with NULL `name`. */
@@ -131,10 +124,6 @@ struct Lispm {
   /* Internal values */
   unsigned htable_index_size;
   int htable_index_shift;
-
-#if LISPM_CONFIG_VERBOSE
-  struct LispmTraceCallbacks trace;
-#endif
 };
 
 /* The very bottom of the stack can be used for special purposes.
@@ -311,41 +300,49 @@ Sym lispm_builtin_as_sym(const struct Builtin *bi);
 enum {
   LISPM_SYM_NIL = 0,
   LISPM_SYM_T   = LISPM_MAKE_BUILTIN_SYM(0),
+  LISPM_SYM_ERR = LISPM_MAKE_BUILTIN_SYM(1),
 
   LISPM_SYM_NO_ASSOC = LISPM_MAKE_SPECIAL_VALUE(0),
   LISPM_SYM_BOUND    = LISPM_MAKE_SPECIAL_VALUE(1),
   LISPM_SYM_FREE     = LISPM_MAKE_SPECIAL_VALUE(2),
-
-  LISPM_ERR_OOM   = LISPM_MAKE_SPECIAL_VALUE(1024 + 0),
-  LISPM_ERR_LEX   = LISPM_MAKE_SPECIAL_VALUE(1024 + 1),
-  LISPM_ERR_PARSE = LISPM_MAKE_SPECIAL_VALUE(1024 + 2),
-  LISPM_ERR_EVAL  = LISPM_MAKE_SPECIAL_VALUE(1024 + 3),
 };
 
-static inline int lispm_sym_is_error(Sym s) {
-  return lispm_sym_is_special(s) && LISPM_ERR_OOM <= s && s <= LISPM_ERR_EVAL;
-}
-
 /* Internal API */
+struct LispmTraceCallbacks {
+  void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
+  void (*apply_leave)(void);
+  void (*lambda_cons)(Sym lambda);
+
+  void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
+  void (*lex_error)(const char *file, unsigned line);
+  void (*parse_error)(const char *file, unsigned line, Sym tok);
+  void (*oom_stack)(const char *file, unsigned line);
+  void (*oom_htable)(const char *file, unsigned line);
+  void (*oom_strings)(const char *file, unsigned line);
+  void (*unbound_symbol)(const char *file, unsigned line, Sym sym);
+  void (*illegal_bind)(const char *file, unsigned line, Sym sym, Sym assoc);
+};
+
 #if LISPM_CONFIG_VERBOSE
+extern struct LispmTraceCallbacks lispm_trace;
 #define LISPM_TRACE(event, ...)                                                                                        \
   do {                                                                                                                 \
-    if (M.trace.event) M.trace.event(__VA_ARGS__);                                                                     \
+    if (lispm_trace.event) lispm_trace.event(__VA_ARGS__);                                                             \
   } while (0)
 #else
 #define LISPM_TRACE(...) ((void)0)
 #endif
 
 /* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
-#define LISPM_EVAL_CHECK(cond, err, diag, ctx)                                                                         \
+#define LISPM_EVAL_CHECK(cond, ctx, event, ...)                                                                        \
   do {                                                                                                                 \
     if (!(cond)) {                                                                                                     \
-      LISPM_TRACE(panic, __FILE__, __LINE__, diag, ctx);                                                               \
-      lispm_report_error(err, ctx);                                                                                    \
+      LISPM_TRACE(event, __FILE__, __LINE__, ##__VA_ARGS__);                                                           \
+      lispm_panic(ctx);                                                                                                \
     }                                                                                                                  \
   } while (0)
 
-__attribute__((noreturn)) void lispm_report_error(Sym err, Sym ctx);
+__attribute__((noreturn)) void lispm_panic(Sym ctx);
 
 /* pc must be between M.program and M.program_end */
 Sym lispm_parse(const char *pc, const char *pc_end);

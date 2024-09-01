@@ -2,7 +2,7 @@
 
 #include "lispm.h"
 
-void lispm_trace(void);
+void lispm_trace_stack(void);
 void lispm_trace_full(void);
 
 void lispm_dump(Sym sym);

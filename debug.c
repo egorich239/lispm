@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #if LISPM_CONFIG_VERBOSE
+struct LispmTraceCallbacks lispm_trace = {};
 struct CallFrame {
   Sym fn;
   Sym resolved;
@@ -26,17 +27,8 @@ void lispm_print_short(Sym sym) {
   case LISPM_SYM_T:
     fprintf(stderr, "t");
     return;
-  case LISPM_ERR_OOM:
-    fprintf(stderr, "!OOM");
-    return;
-  case LISPM_ERR_LEX:
-    fprintf(stderr, "!LEX");
-    return;
-  case LISPM_ERR_PARSE:
-    fprintf(stderr, "!PARSE");
-    return;
-  case LISPM_ERR_EVAL:
-    fprintf(stderr, "!EVAL");
+  case LISPM_SYM_ERR:
+    fprintf(stderr, "#err");
     return;
   }
   if (lispm_sym_is_literal(sym)) {
@@ -136,16 +128,16 @@ static void trace_apply_leave() { --stack_trace_depth; }
 
 void lispm_trace_full(void) {
 #if LISPM_CONFIG_VERBOSE
-  lispm.trace.apply_enter = trace_full_apply_enter;
-  lispm.trace.panic       = trace_panic;
+  lispm_trace.apply_enter = trace_full_apply_enter;
+  lispm_trace.panic       = trace_panic;
 #endif
 }
 
-void lispm_trace(void) {
+void lispm_trace_stack(void) {
 #if LISPM_CONFIG_VERBOSE
-  lispm.trace.apply_enter = trace_apply_enter;
-  lispm.trace.apply_leave = trace_apply_leave;
-  lispm.trace.panic       = trace_panic;
+  lispm_trace.apply_enter = trace_apply_enter;
+  lispm_trace.apply_leave = trace_apply_leave;
+  lispm_trace.panic       = trace_panic;
 #endif
 }
 
