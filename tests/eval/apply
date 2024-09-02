@@ -1,15 +1,15 @@
 apply:non-applicable1
 (2 3 4)
-err!
+#err!
 
 apply:non-applicable2
 (() 3 4)
-err!
+#err!
 
 apply:non-applicable3
 ((quote quote) 3 4)
-err!
+#err!
 
 apply:non-applicable4
 ('quote 3 4)
-err!
+#err!

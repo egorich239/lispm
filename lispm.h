@@ -331,11 +331,7 @@ Sym lispm_builtin_as_sym(const struct Builtin *bi);
 /* special values */
 #define LISPM_MAKE_SPECIAL_VALUE(val) (((val) << 4) | 15u)
 
-enum {
-  LISPM_SYM_NIL = 0,
-  LISPM_SYM_T = LISPM_MAKE_BUILTIN_SYM(0),
-  LISPM_SYM_ERR = LISPM_MAKE_BUILTIN_SYM(1),
-};
+enum { LISPM_SYM_NIL = 0 };
 
 /* Internal API */
 __attribute__((noreturn)) void lispm_panic(Sym ctx);

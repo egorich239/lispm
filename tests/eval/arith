@@ -16,7 +16,7 @@ arith:sum
 
 arith:sum-oflow
 (+ 600000000 600000000)
-err!
+#err!
 
 arith:sum-mod2
 (+ 600000000 600000000 MODULO)
@@ -32,7 +32,7 @@ arith:mul-mod2
 
 arith:mul-oflow
 (* 3000000 3000000)
-err!
+#err!
 
 arith:sub
 (- 45 2)
@@ -44,5 +44,4 @@ arith:sub-mod2
 
 arith:sub-oflow
 (- 1 2)
-err!
-
+#err!

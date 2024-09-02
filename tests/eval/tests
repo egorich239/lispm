@@ -3,7 +3,7 @@ simple-recursion
     (
         (fact (lambda (fact) (lambda (n s) (cond
             ((eq? 1 n) 1)
-            (t (* n ((fact fact) (- n s) s))) 
+            (#t (* n ((fact fact) (- n s) s))) 
         ))))
 
         (fact (fact fact))
@@ -32,25 +32,25 @@ arith
 3
 
 cond-nil
-(let ((nil '())) (cond (nil 1) (t 2)))
+(let ((nil '())) (cond (nil 1) (#t 2)))
 2
 
 cond-list-of-empty-list
-(cond ('(()) 1) (t 2)) 
+(cond ('(()) 1) (#t 2))
 1
 
 cond-quote-of-nil
-(cond ('() 1) (t 2))
+(cond ('() 1) (#t 2))
 2
 
 cond-nil2
-(cond (() 1) (t 2))
+(cond (() 1) (#t 2))
 2
 
 cond-t
-(cond (t 1))
+(cond (#t 1))
 1
 
 cond-quote-t
-(cond ('t 1))
+(cond ('#t 1))
 1

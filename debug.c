@@ -20,15 +20,8 @@ static unsigned stack_trace_depth;
 static const char *literal_name(Sym l) { return lispm.strings + lispm_literal_str_offs(l); }
 
 void lispm_print_short(Sym sym) {
-  switch (sym) {
-  case LISPM_SYM_NIL:
+  if (lispm_sym_is_nil(sym)) {
     fprintf(stderr, "()");
-    return;
-  case LISPM_SYM_T:
-    fprintf(stderr, "t");
-    return;
-  case LISPM_SYM_ERR:
-    fprintf(stderr, "#err");
     return;
   }
   if (lispm_sym_is_literal(sym)) {
