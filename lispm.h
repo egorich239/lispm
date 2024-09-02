@@ -302,6 +302,7 @@ enum {
 struct LispmTraceCallbacks {
   void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
   void (*apply_leave)(void);
+  void (*lambda_proto)(Sym lambda);
   void (*lambda_cons)(Sym lambda);
 
   void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
@@ -339,7 +340,7 @@ __attribute__((noreturn)) void lispm_panic(Sym ctx);
 Sym lispm_parse_quote(const char *pc, const char *pc_end);
 Sym lispm_eval(const char *pc, const char *pc_end);
 
-unsigned lispm_list_scan(Sym* out, Sym li, unsigned limit);
+unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit);
 
 Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
 static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {

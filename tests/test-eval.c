@@ -22,7 +22,7 @@ static int sym_equal(Sym a, Sym b) {
   if (lispm_sym_is_atom(a) || lispm_sym_is_atom(b)) return 0;
   if (!lispm_sym_is_cons(a) || !lispm_sym_is_cons(b)) return 0;
 
-  Sym *aa = lispm_st_obj_unpack(a), *bb = lispm_cons_unpack_user(b);
+  Sym *aa = lispm_st_obj_unpack(a), *bb = lispm_st_obj_unpack(b);
   if (!sym_equal(aa[0], bb[0])) return 0;
   return sym_equal(aa[1], bb[1]);
 }
@@ -32,21 +32,20 @@ struct Lispm lispm = {
 
     /*stack*/
     .stack = stack,
-    .sp    = stack + (sizeof(stack) / sizeof(*stack)),
-    .pp    = stack + LISPM_PP_OFFSET,
+    .sp = stack + (sizeof(stack) / sizeof(*stack)),
 
     /*strings*/
-    .strings     = strings,
+    .strings = strings,
     .strings_end = strings + sizeof(strings),
-    .tp          = strings,
+    .tp = strings,
 
     /*program*/
-    .program     = _binary_test_eval_tests_txt_start,
+    .program = _binary_test_eval_tests_txt_start,
     .program_end = _binary_test_eval_tests_txt_end,
-    .pc          = _binary_test_eval_tests_txt_start,
+    .pc = _binary_test_eval_tests_txt_start,
 
     /*htable*/
-    .htable     = htable,
+    .htable = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
 };
 
@@ -64,11 +63,11 @@ static void lex_error(const char *file, unsigned line) {
 }
 
 int main(int argc, char *argv[]) {
-  int result  = 0;
+  int result = 0;
   int comment = 0;
   lispm_init();
   lispm_trace_stack();
-  lispm_trace.lex_error   = lex_error;
+  lispm_trace.lex_error = lex_error;
   lispm_trace.parse_error = parse_error;
   for (; M.pc < M.program_end; ++M.pc) {
     if (*M.pc == ';') comment = 1;
@@ -77,16 +76,16 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (*M.pc <= ' ') continue;
-    M.sp         = M.stack + (sizeof(stack) / sizeof(*stack));
-    Sym testname = lispm_parse(M.pc, M.program_end);
+    M.sp = M.stack + (sizeof(stack) / sizeof(*stack));
+    Sym testname = lispm_parse_quote(M.pc, M.program_end);
     if (!lispm_sym_is_literal(testname)) {
       fprintf(stderr, "Expected a test name literal, got: ");
       lispm_print_short(testname);
       fprintf(stderr, "\nThe layout of the test file is probably broken; terminating\n");
       return 1;
     }
-    Sym actual   = lispm_exec();
-    Sym expected = lispm_parse(M.pc, M.program_end);
+    Sym actual = lispm_exec();
+    Sym expected = lispm_parse_quote(M.pc, M.program_end);
 
     lispm_print_short(testname);
     if (sym_equal(actual, expected)) {

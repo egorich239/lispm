@@ -62,7 +62,6 @@ static Sym gc(Sym root, unsigned high_mark) {
 enum { PARSE_SYM_UNBOUND = PARSE_SYM_BOUND(0) };
 
 static inline unsigned htable_entry_key(Sym s) { return M.htable[lispm_literal_ht_offs(s)]; }
-static inline int htable_entry_key_is_literal(unsigned key) { return !(key & 1); }
 static inline int htable_entry_key_payload(unsigned key) { return key >> 2; }
 static inline int htable_entry_is_assignable(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
@@ -75,7 +74,7 @@ static inline int htable_entry_key_streq(unsigned key, const char *b, const char
   return !*h;
 }
 static inline Sym htable_entry_get_assoc(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_literal(s) || lispm_sym_is_lambda(s));
+  LISPM_ASSERT(lispm_sym_is_literal(s));
   return M.htable[lispm_literal_ht_offs(s) + 1];
 }
 static inline void htable_entry_set_assoc(Sym s, Sym assoc) {
@@ -110,7 +109,6 @@ static Sym htable_ensure(const char *b, const char *e) {
     entry = M.htable + (2 * offset);
     if (!*entry) goto ensure_insert; /* empty slot */
     Sym lit = lispm_make_literal(2 * offset);
-    if (!htable_entry_key_is_literal(*entry)) continue;
     if (htable_entry_key_streq(*entry, b, e)) return lit; /* found! */
   }
   LISPM_EVAL_CHECK(0, LISPM_SYM_NIL, oom_htable);
@@ -148,7 +146,7 @@ static Sym lex(void) {
   _Static_assert(LEX_IS_ATOM_SYM(S_ATOM), "S_ATOM must match the category");
   _Static_assert(LEX_IS_DIGIT(S_NUM), "S_NUM must match the category");
   const char *token_begin = M.pc;
-  unsigned token_val = 0;
+  unsigned token_val      = 0;
   unsigned c, cat;
   for (; M.pc < M.program_end; ++M.pc) {
     c = (unsigned char)*M.pc;
@@ -193,14 +191,14 @@ lex_num:
   if (token_val != 0 && *token_begin == '0') goto lex_fail;
   return lispm_make_shortnum(token_val);
 }
-
 /* parser */
 static Sym LITERAL_QUOTE; /* initialized during builtin initialization */
 static void parse_mark_used(Sym lit) {
   LISPM_ASSERT(lispm_sym_is_literal(lit));
+  if (!htable_entry_is_assignable(lit)) return;
   Sym old_assoc = htable_entry_get_assoc(lit);
   LISPM_EVAL_CHECK(old_assoc != PARSE_SYM_UNBOUND, lit, unbound_symbol, lit);
-  if (old_assoc != PARSE_SYM_BOUND(M.frame_depth)) return;
+  if (old_assoc == PARSE_SYM_BOUND(M.frame_depth)) return;
   htable_entry_set_assoc(lit, PARSE_SYM_FREE(M.frame_depth));
 }
 static void parse_mark_bound(Sym lit) {
@@ -237,19 +235,25 @@ static Sym parse_frame_leave(void) {
   }
   return captures;
 }
+static Sym parse_ensure_rparen(Sym res, Sym tok) {
+  LISPM_EVAL_CHECK(tok == TOK_RPAREN, tok, parse_error, tok);
+  return res;
+}
 
 static Sym parse(Sym tok, int is_quote);
-static Sym parse_quote(void) { return parse(lex(), 1); }
+static Sym parse_quote(void) {
+  Sym res = parse(lex(), 1);
+  return parse_ensure_rparen(res, lex());
+}
 static Sym parse_con(void) {
-  Sym la;
-  Sym brans = LISPM_SYM_NIL;
-  while ((la = lex()) == TOK_LPAREN) {
+  Sym brans = LISPM_SYM_NIL, tok;
+  while ((tok = lex()) == TOK_LPAREN) {
     Sym cond = parse(lex(), 0);
     Sym act = parse(lex(), 0);
     brans = C(C(cond, act), brans);
+    LISPM_EVAL_CHECK((tok = lex()) == TOK_RPAREN, tok, parse_error, tok);
   }
-  LISPM_EVAL_CHECK(la == TOK_RPAREN, la, parse_error, la);
-  return cons_reverse_inplace(brans);
+  return parse_ensure_rparen(cons_reverse_inplace(brans), tok);
 }
 static Sym parse_lambda(void) {
   parse_frame_enter();
@@ -261,26 +265,24 @@ static Sym parse_lambda(void) {
     parse_mark_bound(var);
   }
   parse_frame_body();
-  Sym body = parse(lex(), 0), la;
+  Sym body = parse(lex(), 0);
   Sym captures = parse_frame_leave();
-  LISPM_EVAL_CHECK((la = lex()) == TOK_RPAREN, la, parse_error, la);
   Sym lambda[3] = {captures, args, body};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA, lambda);
+  return parse_ensure_rparen(lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA, lambda), lex());
 }
 static Sym parse_let(void) {
-  Sym la, asgns = LISPM_SYM_NIL;
-  LISPM_EVAL_CHECK((la = lex()) == TOK_LPAREN, la, parse_error, la);
-  while ((la = lex()) != TOK_RPAREN) {
-    LISPM_EVAL_CHECK((la = lex()) == TOK_RPAREN, la, parse_error, la);
-    Sym var = lex(), expr = parse(lex(), 0), la = lex();
-    LISPM_EVAL_CHECK(lispm_sym_is_literal(var) && la == TOK_RPAREN, var, parse_error, var);
+  Sym asgns = LISPM_SYM_NIL, tok;
+  LISPM_EVAL_CHECK((tok = lex()) == TOK_LPAREN, tok, parse_error, tok);
+  while ((tok = lex()) != TOK_RPAREN) {
+    LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
+    Sym var = lex(), expr = parse(lex(), 0);
+    LISPM_EVAL_CHECK(lispm_sym_is_literal(var) && (tok = lex()) == TOK_RPAREN, var, parse_error, var);
     asgns = C(C(var, expr), asgns);
     parse_frame_enter();
     parse_mark_bound(var);
     parse_frame_body();
   }
   Sym expr = parse(lex(), 0);
-  LISPM_EVAL_CHECK((la = lex()) == TOK_RPAREN, la, parse_error, la);
 
   for (Sym it = asgns; it != LISPM_SYM_NIL; it = lispm_st_obj_unpack(it)[1]) {
     parse_frame_leave();
@@ -288,7 +290,7 @@ static Sym parse_let(void) {
        Even though we use parse frames to verify that no unbound variable is present,
        it does not define a runtime frame and uses the parent's captures. */
   }
-  return C(cons_reverse_inplace(asgns), expr);
+  return parse_ensure_rparen(C(cons_reverse_inplace(asgns), expr), lex());
 }
 static Sym parse(Sym tok, int is_quote) {
   if (lispm_sym_is_shortnum(tok)) return tok;
@@ -296,21 +298,20 @@ static Sym parse(Sym tok, int is_quote) {
     if (!is_quote) parse_mark_used(tok);
     return tok;
   }
-  if (tok == TOK_QUOTE) return C(LITERAL_QUOTE, parse_quote());
+  if (tok == TOK_QUOTE) return C(LITERAL_QUOTE, parse(lex(), 1));
 
   LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
-  Sym la = lex();
-  if (la == TOK_RPAREN) return LISPM_SYM_NIL;
+  if ((tok = lex()) == TOK_RPAREN) return LISPM_SYM_NIL;
 
-  Sym head = parse(la, is_quote);
+  Sym head = parse(tok, is_quote);
   if (!is_quote) {
     const struct Builtin *bi = builtin(head);
     if (bi && bi->parse) return C(head, bi->parse());
   }
 
   Sym res = C(head, LISPM_SYM_NIL);
-  while ((la = lex()) != TOK_RPAREN)
-    res = C(parse(la, is_quote), res);
+  while ((tok = lex()) != TOK_RPAREN)
+    res = C(parse(tok, is_quote), res);
   return cons_reverse_inplace(res);
 }
 static Sym parse1(const char *pc, const char *pc_end, int is_quote) {
@@ -322,6 +323,7 @@ static Sym parse1(const char *pc, const char *pc_end, int is_quote) {
   M.program_end = old_pc_end;
   return res;
 }
+Sym lispm_parse_quote(const char *pc, const char *pc_end) { return parse1(pc, pc_end, 1); }
 
 /* eval */
 static Sym eval(Sym e);

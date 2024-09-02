@@ -141,15 +141,14 @@ static Sym IMPORT(Sym ptr) {
 LISPM_BUILTINS_EXT(LRT0_SYMS) = {{"MODULO"}};
 
 typedef enum { OP_OR, OP_AND, OP_XOR, OP_ADD, OP_SUB, OP_MUL } BinOp;
-static int binop_unpack(Sym args, int arith, unsigned *p, unsigned *q) {
+static int binop_unpack(Sym args, int arith, Sym *p, Sym *q) {
   Sym pqm[3] = {};
   const unsigned argc = lispm_list_scan(pqm, args, arith ? 3 : 2);
   LISPM_EVAL_CHECK(((argc == 2) || (arith && argc == 3)) && lispm_sym_is_shortnum(pqm[0]) &&
                        lispm_sym_is_shortnum(pqm[1]) &&
                        (lispm_sym_is_nil(pqm[2]) || lispm_builtin_as_sym(LRT0_SYMS) == pqm[2]),
                    args, panic, "p, q[, modulo] expected, got: ", args);
-  *p = lispm_shortnum_val(pqm[0]);
-  *q = lispm_shortnum_val(pqm[1]);
+  *p = pqm[0], *q = pqm[1];
   return lispm_builtin_as_sym(LRT0_SYMS) == pqm[2];
 }
 static Sym binop(Sym args, BinOp op, int arith) {

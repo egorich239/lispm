@@ -20,7 +20,6 @@ struct Lispm lispm = {
     /*stack*/
     .stack = stack,
     .sp    = stack + (sizeof(stack) / sizeof(*stack)),
-    .pp    = stack + LISPM_PP_OFFSET,
 
     /*strings*/
     .strings     = strings,

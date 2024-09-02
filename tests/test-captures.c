@@ -84,7 +84,6 @@ struct Lispm lispm = {
     /*stack*/
     .stack = stack,
     .sp    = stack + (sizeof(stack) / sizeof(*stack)),
-    .pp    = stack + LISPM_PP_OFFSET,
 
     /*strings*/
     .strings     = strings,
@@ -130,9 +129,9 @@ int main(int argc, char *argv[]) {
     }
     if (*M.pc <= ' ') continue;
     M.sp         = M.stack + (sizeof(stack) / sizeof(*stack));
-    next_lambda  = lispm_parse(M.pc, M.program_end);
+    next_lambda  = lispm_parse_quote(M.pc, M.program_end);
     Sym actual   = lispm_exec();
-    Sym expected = lispm_parse(M.pc, M.program_end);
+    Sym expected = lispm_parse_quote(M.pc, M.program_end);
 
     if (!sym_equal(actual, expected)) {
       fprintf(stderr, "  expected result: ");

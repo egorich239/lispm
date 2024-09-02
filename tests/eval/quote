@@ -13,11 +13,11 @@ AB
 ; Special forms must not be used as values, because this leads to undecidable
 ; problems, e.g. should we capture `A` in `(lambda (f) (f A))`? 
 let-quote-bound
-(let ((q quote)) (q AB))
+(let ((q quote) (AB 'AB)) (q AB))
 err!
 
 let-quote-bound2
-(let ((q quote)) (((lambda () q)) AB))
+(let ((q quote) (AB 'AB)) (((lambda () q)) AB))
 err!
 
 let-quote-quote1
