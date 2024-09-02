@@ -13,36 +13,29 @@ __attribute__((noreturn)) void lispm_panic(Sym ctx) {
 
 /* cons functions */
 static Sym cons_reverse_inplace(Sym li) {
-  /* not a public interface because it actually changes the value of a symbol */
+  /* not a public interface because it actually changes the object state */
   LISPM_ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_cons(li));
   Sym cur = li, prev = LISPM_SYM_NIL, next, *cons;
   while (!lispm_sym_is_nil(cur)) {
     cons = lispm_st_obj_unpack(cur), next = cons[1];
-    M.stack[lispm_st_obj_st_offs(cur) + 1] = prev;
-    prev = cur, cur = next;
+    cons[1] = prev, prev = cur, cur = next;
   }
   return prev;
 }
 
 /* stack functions */
-Sym lispm_st_obj_alloc(unsigned k, Sym *vals) {
-  const unsigned sz = lispm_st_obj_st_size(k);
-  M.sp -= sz;
+Sym lispm_st_obj_alloc(unsigned k) {
+  M.sp -= lispm_st_obj_st_size(k);
   LISPM_EVAL_CHECK(M.stack + LISPM_STACK_BOTTOM_OFFSET < M.sp, LISPM_SYM_NIL, oom_stack);
-  Sym *sp = M.sp;
-  sp[0] = vals[0], sp[1] = vals[1];
-  if (sz == 3) sp[2] = vals[2];
   return lispm_make_st_obj(k, M.sp - M.stack);
 }
 Sym *lispm_st_obj_unpack(Sym s) { return M.stack + lispm_st_obj_st_offs(s); }
 static Sym gc0(Sym s, unsigned high_mark, unsigned depth) {
   /* TODO: guarantee that gc0 over list (of atoms) is non-recursive */
-  static Sym NILS[3] = {};
   if (!lispm_sym_is_st_obj(s) || lispm_st_obj_st_offs(s) >= high_mark) return s;
   unsigned sz = lispm_st_obj_st_size(s);
-  Sym res = lispm_st_obj_alloc(lispm_st_obj_kind(s), NILS);
-  Sym *t = M.stack + lispm_st_obj_st_offs(res);
-  Sym *f = M.stack + lispm_st_obj_st_offs(s) + sz;
+  Sym res = lispm_st_obj_alloc(lispm_st_obj_kind(s));
+  Sym *t = M.sp, *f = lispm_st_obj_unpack(s) + sz;
   for (Sym *m = t + sz; m != t;)
     *--m = gc0(*--f, high_mark, depth);
   return lispm_st_obj_offset_by(res, depth);
@@ -85,7 +78,7 @@ static Sym htable_entry_set_assoc(Sym s, Sym assoc) {
 static Sym htable_shadow_append(Sym shadow, Sym lit, Sym assoc) {
   return C(C(lit, htable_entry_set_assoc(lit, assoc)), shadow);
 }
-static void htable_restore_shadow(Sym shadow) {
+static void htable_shadow_rollback(Sym shadow) {
   Sym asgn, *cons;
   while (!lispm_sym_is_nil(shadow)) {
     cons = lispm_st_obj_unpack(shadow), asgn = cons[0], shadow = cons[1];
@@ -103,13 +96,13 @@ static inline unsigned htable_hashf(const char *b, const char *e, unsigned seed)
   return hash;
 }
 static Sym htable_ensure(const char *b, const char *e) {
-  unsigned offset = 5381;
-  unsigned *entry;
+  unsigned offset = 5381, *entry;
+  Sym lit;
   for (int attempt = 0; attempt < LISPM_STRINGS_INDEX_LOOKUP_LIMIT; ++attempt) {
     offset = htable_hashf(b, e, offset);
     entry = M.htable + (2 * offset);
-    if (!*entry) goto ensure_insert; /* empty slot */
-    Sym lit = lispm_make_literal(2 * offset);
+    lit = lispm_make_literal(2 * offset);
+    if (!*entry) goto ensure_insert;                      /* empty slot */
     if (htable_entry_key_streq(*entry, b, e)) return lit; /* found! */
   }
   LISPM_EVAL_CHECK(0, LISPM_SYM_NIL, oom_htable);
@@ -123,7 +116,7 @@ ensure_insert:
   *M.tp++ = 0;
   while ((M.tp - M.strings) & 3)
     M.tp++;
-  return lispm_make_literal(2 * offset);
+  return lit;
 }
 
 /* builtins support */
@@ -193,7 +186,6 @@ lex_num:
   return lispm_make_shortnum(token_val);
 }
 /* parser */
-static Sym LITERAL_QUOTE; /* initialized during builtin initialization */
 static void parse_frame_enter(void) {
   ++M.frame_depth;
   M.parse_frame = C(LISPM_SYM_NIL, M.parse_frame);
@@ -233,24 +225,25 @@ static Sym parse_frame_leave(void) {
   }
   return captures;
 }
+
+static Sym parse(Sym tok, int is_quote);
 static Sym parse_ensure_rparen(Sym res, Sym tok) {
   LISPM_EVAL_CHECK(tok == TOK_RPAREN, tok, parse_error, tok);
   return res;
 }
-
-static Sym parse(Sym tok, int is_quote);
+static Sym parse_pair(Sym tok, int is_quote_fst) {
+  LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
+  Sym fst = parse(lex(), is_quote_fst), snd = parse(lex(), 0);
+  return parse_ensure_rparen(C(fst, snd), lex());
+}
 static Sym parse_quote(void) {
   Sym res = parse(lex(), 1);
   return parse_ensure_rparen(res, lex());
 }
 static Sym parse_con(void) {
   Sym brans = LISPM_SYM_NIL, tok;
-  while ((tok = lex()) == TOK_LPAREN) {
-    Sym cond = parse(lex(), 0);
-    Sym act = parse(lex(), 0);
-    brans = C(C(cond, act), brans);
-    LISPM_EVAL_CHECK((tok = lex()) == TOK_RPAREN, tok, parse_error, tok);
-  }
+  while ((tok = lex()) == TOK_LPAREN)
+    brans = C(parse_pair(tok, 0), brans);
   return parse_ensure_rparen(cons_reverse_inplace(brans), tok);
 }
 static Sym parse_lambda(void) {
@@ -262,32 +255,27 @@ static Sym parse_lambda(void) {
     LISPM_EVAL_CHECK(lispm_sym_is_literal(var), var, parse_error, var);
     parse_frame_bind(var);
   }
-  Sym body = parse(lex(), 0);
-  Sym captures = parse_frame_leave();
-  Sym lambda[3] = {captures, args, body};
-  return parse_ensure_rparen(lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA, lambda), lex());
+  Sym body = parse(lex(), 0), captures = parse_ensure_rparen(parse_frame_leave(), lex());
+  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA);
+  M.sp[0] = captures, M.sp[1] = args, M.sp[2] = body;
+  return res;
 }
 static Sym parse_let(void) {
-  Sym asgns = LISPM_SYM_NIL, tok;
+  Sym asgns = LISPM_SYM_NIL, tok, expr;
   LISPM_EVAL_CHECK((tok = lex()) == TOK_LPAREN, tok, parse_error, tok);
   while ((tok = lex()) != TOK_RPAREN) {
-    LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
-    Sym var = lex(), expr = parse(lex(), 0);
-    LISPM_EVAL_CHECK(lispm_sym_is_literal(var) && (tok = lex()) == TOK_RPAREN, var, parse_error, var);
-    asgns = C(C(var, expr), asgns);
+    Sym asgn = parse_pair(tok, 1), var = lispm_st_obj_unpack(asgn)[0];
+    LISPM_EVAL_CHECK(lispm_sym_is_literal(var), var, parse_error, var);
+    asgns = C(asgn, asgns);
     parse_frame_enter();
     parse_frame_bind(var);
   }
-  Sym expr = parse(lex(), 0);
-
-  for (Sym it = asgns; it != LISPM_SYM_NIL; it = lispm_st_obj_unpack(it)[1]) {
+  expr = parse(lex(), 0), parse_ensure_rparen(LISPM_SYM_NIL, lex());
+  for (Sym it = asgns; it != LISPM_SYM_NIL; it = lispm_st_obj_unpack(it)[1])
     parse_frame_leave();
-    /* let is just a syntactic form, one cannot assign it to a variable.
-       Even though we use parse frames to verify that no unbound variable is present,
-       it does not define a runtime frame and uses the parent's captures. */
-  }
-  return parse_ensure_rparen(C(cons_reverse_inplace(asgns), expr), lex());
+  return C(cons_reverse_inplace(asgns), expr);
 }
+static Sym LITERAL_QUOTE; /* initialized during builtin initialization */
 static Sym parse(Sym tok, int is_quote) {
   if (lispm_sym_is_shortnum(tok)) return tok;
   if (lispm_sym_is_literal(tok)) {
@@ -332,8 +320,9 @@ static Sym evlambda(Sym lambda) {
     LISPM_ASSERT(assoc != PARSE_SYM_UNBOUND);
     captures = C(C(name, assoc), captures);
   }
-  Sym instance[3] = {captures, proto[1], proto[2]};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA, instance);
+  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA);
+  M.sp[0] = captures, M.sp[1] = proto[1], M.sp[2] = proto[2];
+  return res;
 }
 static Sym evcon(Sym brans) {
   Sym *cons, bran;
@@ -352,7 +341,7 @@ static Sym evlet(Sym let) {
     shadow = htable_shadow_append(shadow, cons[0], eval(cons[1]));
   }
   Sym res = eval(def[1]);
-  htable_restore_shadow(shadow);
+  htable_shadow_rollback(shadow);
   return res;
 }
 static Sym evlis(Sym li) {
@@ -367,11 +356,9 @@ static Sym evapply(Sym expr) {
   Sym f, fn = LISPM_SYM_NIL, args, *cons;
   cons = lispm_st_obj_unpack(expr), f = cons[0], args = cons[1];
   LISPM_ASSERT(lispm_sym_is_atom(f) || lispm_sym_is_cons(f));
-  if (!lispm_sym_is_literal(f) && !lispm_sym_is_cons(f)) goto evapply_nofun;
 
   const struct Builtin *bi = builtin(f);
-  if (!bi) fn = eval(f);
-  if (!bi && !lispm_sym_is_lambda(fn)) goto evapply_nofun;
+  LISPM_EVAL_CHECK(bi || lispm_sym_is_lambda(fn = eval(f)), f, panic, "a function expected, got: ", f);
 
   if (!bi || !bi->parse) args = evlis(args); /* not a special form, evaluate arguments */
   LISPM_TRACE(apply_enter, f, fn, args);
@@ -394,11 +381,8 @@ static Sym evapply(Sym expr) {
   LISPM_EVAL_CHECK(lispm_sym_is_nil(argf) && lispm_sym_is_nil(argv), fn, panic,
                    "number of formal arguments does not match the number of passed arguments: ", fn);
   Sym res = eval(lambda[2]);
-  htable_restore_shadow(shadow);
+  htable_shadow_rollback(shadow);
   return res;
-
-evapply_nofun:
-  LISPM_EVAL_CHECK(0, f, panic, "a function expected, got: ", f);
 }
 static Sym eval(Sym syn) {
   if (lispm_sym_is_nil(syn) || lispm_sym_is_shortnum(syn)) return syn;

@@ -346,10 +346,11 @@ Sym lispm_eval(const char *pc, const char *pc_end);
 
 unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit);
 
-Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
+Sym lispm_st_obj_alloc(unsigned k);
 static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
-  Sym cons[2] = {car, cdr};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_CONS, cons);
+  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_CONS);
+  lispm.sp[0] = car, lispm.sp[1] = cdr;
+  return res;
 }
 
 Sym *lispm_st_obj_unpack(Sym s);
