@@ -99,6 +99,16 @@ static void trace_panic(const char *file, unsigned line, const char *msg, Sym ct
   lispm_print_short(ctx);
   fprintf(stderr, "\n");
 }
+static void trace_illegal_bind(const char *file, unsigned line, Sym sym) {
+  fprintf(stderr, "it is fobidden to bind to: ");
+  lispm_print_short(sym);
+  fprintf(stderr, "\n");
+}
+static void trace_unbound_symbol(const char *file, unsigned line, Sym sym) {
+  fprintf(stderr, "unbound symbol: ");
+  lispm_print_short(sym);
+  fprintf(stderr, "\n");
+}
 static void print_call_frame(struct CallFrame frame) {
   fprintf(stderr, "  ");
   lispm_print_short(frame.fn);
@@ -134,6 +144,8 @@ void lispm_trace_full(void) {
   lispm_trace.apply_enter = trace_full_apply_enter;
   lispm_trace.panic = trace_panic;
   lispm_trace.assertion = trace_assertion;
+  lispm_trace.illegal_bind = trace_illegal_bind;
+  lispm_trace.unbound_symbol = trace_unbound_symbol;
 #endif
 }
 
@@ -143,6 +155,8 @@ void lispm_trace_stack(void) {
   lispm_trace.apply_leave = trace_apply_leave;
   lispm_trace.panic = trace_panic;
   lispm_trace.assertion = trace_assertion;
+  lispm_trace.illegal_bind = trace_illegal_bind;
+  lispm_trace.unbound_symbol = trace_unbound_symbol;
 #endif
 }
 

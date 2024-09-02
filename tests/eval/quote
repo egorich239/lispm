@@ -2,6 +2,10 @@ quote-list
 '(3 2 1)
 (3 2 1)
 
+let-quote0
+(let ((AB 'T)) AB) 
+T
+
 let-quote
 (let ((AB 'T)) 'AB) 
 AB

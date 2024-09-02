@@ -107,7 +107,6 @@ struct Lispm {
   unsigned htable_index_size;
   int htable_index_shift;
   Sym parse_frame;
-  Sym frame_shadow;
   unsigned frame_depth;
 };
 
