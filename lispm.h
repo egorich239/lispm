@@ -10,15 +10,6 @@
 /* Abort is an external symbol provided by runtime */
 extern __attribute__((noreturn)) void lispm_rt_abort(void);
 
-#if LISPM_CONFIG_ASSERT
-#define LISPM_ASSERT(cond)                                                                                             \
-  do {                                                                                                                 \
-    if (!(cond)) lispm_rt_abort();                                                                                     \
-  } while (0)
-#else
-#define LISPM_ASSERT(cond) ((void)(0))
-#endif
-
 /** Symbol, one of:
  *  - NIL:            corresponds to empty list
  *  - short unsigned: an atom, corresponding to an unsigned integer
@@ -139,6 +130,55 @@ extern void lispm_rt_try(void (*fn)(void));
 extern __attribute__((noreturn)) void lispm_rt_throw(void);
 /* Machine must be initialized before calling lispm_exec(). */
 extern struct Lispm lispm;
+
+/* tracing */
+struct LispmTraceCallbacks {
+  void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
+  void (*apply_leave)(void);
+  void (*lambda_proto)(Sym lambda);
+  void (*lambda_cons)(Sym lambda);
+
+  void (*assertion)(const char *file, unsigned line, const char *msg);
+  void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
+  void (*lex_error)(const char *file, unsigned line);
+  void (*parse_error)(const char *file, unsigned line, Sym tok);
+  void (*oom_stack)(const char *file, unsigned line);
+  void (*oom_htable)(const char *file, unsigned line);
+  void (*oom_strings)(const char *file, unsigned line);
+  void (*unbound_symbol)(const char *file, unsigned line, Sym sym);
+  void (*illegal_bind)(const char *file, unsigned line, Sym sym);
+};
+
+#if LISPM_CONFIG_VERBOSE
+extern struct LispmTraceCallbacks lispm_trace;
+#define LISPM_TRACE(event, ...)                                                                                        \
+  do {                                                                                                                 \
+    if (lispm_trace.event) lispm_trace.event(__VA_ARGS__);                                                             \
+  } while (0)
+#else
+#define LISPM_TRACE(...) ((void)0)
+#endif
+
+#if LISPM_CONFIG_ASSERT
+#define LISPM_ASSERT(cond)                                                                                             \
+  do {                                                                                                                 \
+    if (!(cond)) {                                                                                                     \
+      LISPM_TRACE(assertion, __FILE__, __LINE__, #cond);                                                               \
+      lispm_rt_abort();                                                                                                \
+    }                                                                                                                  \
+  } while (0)
+#else
+#define LISPM_ASSERT(cond) ((void)(0))
+#endif
+
+/* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
+#define LISPM_EVAL_CHECK(cond, ctx, event, ...)                                                                        \
+  do {                                                                                                                 \
+    if (!(cond)) {                                                                                                     \
+      LISPM_TRACE(event, __FILE__, __LINE__, ##__VA_ARGS__);                                                           \
+      lispm_panic(ctx);                                                                                                \
+    }                                                                                                                  \
+  } while (0)
 
 #define LISPM_UPPER_BITS(n) ~(~0u >> (n))
 
@@ -299,41 +339,6 @@ enum {
 };
 
 /* Internal API */
-struct LispmTraceCallbacks {
-  void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
-  void (*apply_leave)(void);
-  void (*lambda_proto)(Sym lambda);
-  void (*lambda_cons)(Sym lambda);
-
-  void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
-  void (*lex_error)(const char *file, unsigned line);
-  void (*parse_error)(const char *file, unsigned line, Sym tok);
-  void (*oom_stack)(const char *file, unsigned line);
-  void (*oom_htable)(const char *file, unsigned line);
-  void (*oom_strings)(const char *file, unsigned line);
-  void (*unbound_symbol)(const char *file, unsigned line, Sym sym);
-  void (*illegal_bind)(const char *file, unsigned line, Sym sym);
-};
-
-#if LISPM_CONFIG_VERBOSE
-extern struct LispmTraceCallbacks lispm_trace;
-#define LISPM_TRACE(event, ...)                                                                                        \
-  do {                                                                                                                 \
-    if (lispm_trace.event) lispm_trace.event(__VA_ARGS__);                                                             \
-  } while (0)
-#else
-#define LISPM_TRACE(...) ((void)0)
-#endif
-
-/* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
-#define LISPM_EVAL_CHECK(cond, ctx, event, ...)                                                                        \
-  do {                                                                                                                 \
-    if (!(cond)) {                                                                                                     \
-      LISPM_TRACE(event, __FILE__, __LINE__, ##__VA_ARGS__);                                                           \
-      lispm_panic(ctx);                                                                                                \
-    }                                                                                                                  \
-  } while (0)
-
 __attribute__((noreturn)) void lispm_panic(Sym ctx);
 
 /* pc must be between M.program and M.program_end */
