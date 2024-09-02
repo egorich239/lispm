@@ -73,7 +73,7 @@ void lispm_print_short(Sym sym) {
   fprintf(stderr, "(");
   while (lispm_sym_is_cons(sym)) {
     Sym *cons = lispm_st_obj_unpack(sym);
-    sym       = cons[1];
+    sym = cons[1];
     if (counter < 0) continue;
     if (counter == 0) {
       fprintf(stderr, " ...");
@@ -91,9 +91,22 @@ void lispm_print_short(Sym sym) {
 }
 
 #if LISPM_CONFIG_VERBOSE
+static void trace_assertion(const char *file, unsigned line, const char *msg) {
+  fprintf(stderr, "%s:%u: ASSERT: %s\n", file, line, msg);
+}
 static void trace_panic(const char *file, unsigned line, const char *msg, Sym ctx) {
   fprintf(stderr, "%s:%u: %s", file, line, msg);
   lispm_print_short(ctx);
+  fprintf(stderr, "\n");
+}
+static void trace_illegal_bind(const char *file, unsigned line, Sym sym) {
+  fprintf(stderr, "it is fobidden to bind to: ");
+  lispm_print_short(sym);
+  fprintf(stderr, "\n");
+}
+static void trace_unbound_symbol(const char *file, unsigned line, Sym sym) {
+  fprintf(stderr, "unbound symbol: ");
+  lispm_print_short(sym);
   fprintf(stderr, "\n");
 }
 static void print_call_frame(struct CallFrame frame) {
@@ -119,7 +132,7 @@ static void trace_full_apply_enter(Sym f, Sym resolved, Sym a) {
 
 static void trace_apply_enter(Sym f, Sym resolved, Sym a) {
   const unsigned target = stack_trace_depth < STACK_TRACE_DEPTH ? stack_trace_depth : STACK_TRACE_DEPTH - 1;
-  stack_trace[target]   = (struct CallFrame){.fn = f, .resolved = resolved, .args = a};
+  stack_trace[target] = (struct CallFrame){.fn = f, .resolved = resolved, .args = a};
   ++stack_trace_depth;
 }
 
@@ -129,7 +142,10 @@ static void trace_apply_leave() { --stack_trace_depth; }
 void lispm_trace_full(void) {
 #if LISPM_CONFIG_VERBOSE
   lispm_trace.apply_enter = trace_full_apply_enter;
-  lispm_trace.panic       = trace_panic;
+  lispm_trace.panic = trace_panic;
+  lispm_trace.assertion = trace_assertion;
+  lispm_trace.illegal_bind = trace_illegal_bind;
+  lispm_trace.unbound_symbol = trace_unbound_symbol;
 #endif
 }
 
@@ -137,7 +153,10 @@ void lispm_trace_stack(void) {
 #if LISPM_CONFIG_VERBOSE
   lispm_trace.apply_enter = trace_apply_enter;
   lispm_trace.apply_leave = trace_apply_leave;
-  lispm_trace.panic       = trace_panic;
+  lispm_trace.panic = trace_panic;
+  lispm_trace.assertion = trace_assertion;
+  lispm_trace.illegal_bind = trace_illegal_bind;
+  lispm_trace.unbound_symbol = trace_unbound_symbol;
 #endif
 }
 
@@ -155,7 +174,7 @@ void lispm_print_stack_trace(void) {
 }
 
 void lispm_dump(Sym sym) {
-  static int indent    = 0;
+  static int indent = 0;
   static int same_line = 0;
 
   const unsigned *stack = lispm.stack;
@@ -171,7 +190,7 @@ void lispm_dump(Sym sym) {
     same_line = 1;
     while (lispm_sym_is_cons(sym)) {
       Sym car = stack[lispm_st_obj_st_offs(sym)];
-      sym     = stack[lispm_st_obj_st_offs(sym) + 1];
+      sym = stack[lispm_st_obj_st_offs(sym) + 1];
       lispm_dump(car);
     }
     if (sym != LISPM_SYM_NIL) lispm_dump(sym);

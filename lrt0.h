@@ -2,7 +2,7 @@
 
 #include "lispm.h"
 
-/* Extension symbols: spans 
+/* Extension symbols: spans
  * -     <SPAN> 11 10: triplet of short unsigned's page, offs, length; see lrt0.h for more.
  */
 enum { LISPM_ST_OBJ_SPAN = LISPM_ST_OBJ_EXT_3 };
@@ -20,9 +20,9 @@ static inline struct Span lispm_make_span(unsigned page, unsigned offs, unsigned
   return (struct Span){lispm_make_shortnum(page), lispm_make_shortnum(offs), lispm_make_shortnum(len)};
 }
 static inline Sym lispm_span_alloc(struct Span span) {
-  /* Casting would be so much nicer, but technically UB. Let the optimizer care. */
-  Sym arr[] = {span.page, span.offs, span.len};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN, arr);
+  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_SPAN);
+  lispm.sp[0] = span.page, lispm.sp[1] = span.offs, lispm.sp[2] = span.len;
+  return res;
 }
 static inline struct Span lispm_span_unpack(Sym span) {
   LISPM_ASSERT(lispm_sym_is_span(span));

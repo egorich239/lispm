@@ -10,15 +10,6 @@
 /* Abort is an external symbol provided by runtime */
 extern __attribute__((noreturn)) void lispm_rt_abort(void);
 
-#if LISPM_CONFIG_ASSERT
-#define LISPM_ASSERT(cond)                                                                                             \
-  do {                                                                                                                 \
-    if (!(cond)) lispm_rt_abort();                                                                                     \
-  } while (0)
-#else
-#define LISPM_ASSERT(cond) ((void)(0))
-#endif
-
 /** Symbol, one of:
  *  - NIL:            corresponds to empty list
  *  - short unsigned: an atom, corresponding to an unsigned integer
@@ -35,7 +26,7 @@ extern __attribute__((noreturn)) void lispm_rt_abort(void);
  * -               0: LISPM_SYM_NIL
  * -    <OFFS:30> 00: literal with the given <OFFS> in htable;
  *                    each literal consumes two words in htable:
- *                    0: b0 <LIT:30> - bit 'b' is 0 for builtin literals, else 1;
+ *                    0: <LIT:30> w0 - bit 'w' is 0 for readonly literals, else 1;
  *                                     LIT is offset of NUL-terminated representation
  *                                     of literal in strings table.
  *                    1: the currently assigned value of the literal.
@@ -59,13 +50,6 @@ extern __attribute__((noreturn)) void lispm_rt_abort(void);
  * -    <N:28> 00 11: builtin function at the offset N in builtins table;
  *
  * -       ... 11 11: special values
- *         0000 000F: T
- *         FFFF FFDF: used during evaluation of capture lists of LET;
- *                    marks a literal first defined in the previous part of
- *                    the LET evaluations;
- *         FFFF FFEF: used during evaluation of capture lists of LAMBDA/LET;
- *                    marks a literal already in the capture list;
- *         FFFF FFFF: no value currently associated with the literal.
  */
 typedef unsigned Sym;
 
@@ -82,7 +66,7 @@ typedef unsigned Sym;
 struct __attribute__((aligned(16))) Builtin {
   const char *name;
   Sym (*eval)(Sym args);
-  Sym (*evcap)(Sym args, Sym caps);
+  Sym (*parse)(void);
   Sym *store; /* if non-NULL, the registered literal is stored into this location */
 };
 /* Convenience macro to implement extensions */
@@ -98,8 +82,6 @@ struct Lispm {
   Sym *stack;
   /* Stack pointer. Grows down. */
   Sym *sp;
-  /* Parser pointer. Grows up, must be at least 4 words above stack bottom. */
-  Sym *pp;
 
   /* Beginning of the strings storage. */
   char *strings;
@@ -124,15 +106,18 @@ struct Lispm {
   /* Internal values */
   unsigned htable_index_size;
   int htable_index_shift;
+  Sym parse_frame;
+  unsigned frame_depth;
 };
 
-/* The very bottom of the stack can be used for special purposes.
-   This value defines the size of that bottom part. */
-#define LISPM_PP_OFFSET 64u
+enum {
+  /* Hash table uses open addressing.
+     This value limits how many slots are looked up before we give up. */
+  LISPM_STRINGS_INDEX_LOOKUP_LIMIT = 32u,
 
-/* Hash table uses open addressing.
-   This value limits how many slots are looked up before we give up. */
-#define STRINGS_INDEX_LOOKUP_LIMIT 32u
+  /* The bottom of the stack is used to communicate information about errors. */
+  LISPM_STACK_BOTTOM_OFFSET = 8u,
+};
 
 /* External symbols that runtime must provide: */
 /* Invokes `fn` such that a call to `lispm_rt_throw()` causes immediate stack unwinding
@@ -145,6 +130,55 @@ extern __attribute__((noreturn)) void lispm_rt_throw(void);
 /* Machine must be initialized before calling lispm_exec(). */
 extern struct Lispm lispm;
 
+/* tracing */
+struct LispmTraceCallbacks {
+  void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
+  void (*apply_leave)(void);
+  void (*lambda_proto)(Sym lambda);
+  void (*lambda_cons)(Sym lambda);
+
+  void (*assertion)(const char *file, unsigned line, const char *msg);
+  void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
+  void (*lex_error)(const char *file, unsigned line);
+  void (*parse_error)(const char *file, unsigned line, Sym tok);
+  void (*oom_stack)(const char *file, unsigned line);
+  void (*oom_htable)(const char *file, unsigned line);
+  void (*oom_strings)(const char *file, unsigned line);
+  void (*unbound_symbol)(const char *file, unsigned line, Sym sym);
+  void (*illegal_bind)(const char *file, unsigned line, Sym sym);
+};
+
+#if LISPM_CONFIG_VERBOSE
+extern struct LispmTraceCallbacks lispm_trace;
+#define LISPM_TRACE(event, ...)                                                                                        \
+  do {                                                                                                                 \
+    if (lispm_trace.event) lispm_trace.event(__VA_ARGS__);                                                             \
+  } while (0)
+#else
+#define LISPM_TRACE(...) ((void)0)
+#endif
+
+#if LISPM_CONFIG_ASSERT
+#define LISPM_ASSERT(cond)                                                                                             \
+  do {                                                                                                                 \
+    if (!(cond)) {                                                                                                     \
+      LISPM_TRACE(assertion, __FILE__, __LINE__, #cond);                                                               \
+      lispm_rt_abort();                                                                                                \
+    }                                                                                                                  \
+  } while (0)
+#else
+#define LISPM_ASSERT(cond) ((void)(0))
+#endif
+
+/* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
+#define LISPM_EVAL_CHECK(cond, ctx, event, ...)                                                                        \
+  do {                                                                                                                 \
+    if (!(cond)) {                                                                                                     \
+      LISPM_TRACE(event, __FILE__, __LINE__, ##__VA_ARGS__);                                                           \
+      lispm_panic(ctx);                                                                                                \
+    }                                                                                                                  \
+  } while (0)
+
 #define LISPM_UPPER_BITS(n) ~(~0u >> (n))
 
 /* API */
@@ -152,10 +186,10 @@ static inline int lispm_is_power_of_two(unsigned i) { return i && !(i & (i - 1))
 static inline int lispm_shortnum_can_represent(unsigned val) { return (val & LISPM_UPPER_BITS(2)) == 0; }
 static inline int lispm_is_valid_config(void) {
   const struct Lispm *m = &lispm;
-  return m->stack + LISPM_PP_OFFSET <= m->pp && m->pp < m->sp /**/
-         && m->strings + 8 <= m->strings_end                  /**/
-         && m->program <= m->pc && m->pc < m->program_end     /**/
-         && m->htable + 1024 <= m->htable_end                 /**/
+  return m->stack + LISPM_STACK_BOTTOM_OFFSET < m->sp     /**/
+         && m->strings + 8 <= m->strings_end              /**/
+         && m->program <= m->pc && m->pc < m->program_end /**/
+         && m->htable + 1024 <= m->htable_end             /**/
          && lispm_is_power_of_two(m->htable_end - m->htable)
          /* we also want all offsets to fit into short unsigned */
          && lispm_shortnum_can_represent(m->sp - m->stack)            /**/
@@ -181,7 +215,7 @@ static inline unsigned lispm_literal_ht_offs(Sym s) {
 }
 static inline unsigned lispm_literal_str_offs(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
-  return lispm.htable[lispm_literal_ht_offs(s)] & ~LISPM_UPPER_BITS(1); /* TODO: name these upper bits */
+  return lispm.htable[lispm_literal_ht_offs(s)] >> 2;
 }
 
 /* unsigneds */
@@ -241,7 +275,7 @@ static inline Sym lispm_shortnum_mul(Sym p, Sym q, int *overflow) {
 
 /* stack objects */
 enum {
-  LISPM_ST_OBJ_CONS   = 2u,
+  LISPM_ST_OBJ_CONS = 2u,
   LISPM_ST_OBJ_LAMBDA = 6u,
 
   /* an extension object, taking TWO words on stack */
@@ -299,64 +333,24 @@ Sym lispm_builtin_as_sym(const struct Builtin *bi);
 
 enum {
   LISPM_SYM_NIL = 0,
-  LISPM_SYM_T   = LISPM_MAKE_BUILTIN_SYM(0),
+  LISPM_SYM_T = LISPM_MAKE_BUILTIN_SYM(0),
   LISPM_SYM_ERR = LISPM_MAKE_BUILTIN_SYM(1),
-
-  LISPM_SYM_NO_ASSOC = LISPM_MAKE_SPECIAL_VALUE(0),
-  LISPM_SYM_BOUND    = LISPM_MAKE_SPECIAL_VALUE(1),
-  LISPM_SYM_FREE     = LISPM_MAKE_SPECIAL_VALUE(2),
 };
 
 /* Internal API */
-struct LispmTraceCallbacks {
-  void (*apply_enter)(Sym fn, Sym fn_resolved, Sym args);
-  void (*apply_leave)(void);
-  void (*lambda_cons)(Sym lambda);
-
-  void (*panic)(const char *file, unsigned line, const char *msg, Sym ctx);
-  void (*lex_error)(const char *file, unsigned line);
-  void (*parse_error)(const char *file, unsigned line, Sym tok);
-  void (*oom_stack)(const char *file, unsigned line);
-  void (*oom_htable)(const char *file, unsigned line);
-  void (*oom_strings)(const char *file, unsigned line);
-  void (*unbound_symbol)(const char *file, unsigned line, Sym sym);
-  void (*illegal_bind)(const char *file, unsigned line, Sym sym, Sym assoc);
-};
-
-#if LISPM_CONFIG_VERBOSE
-extern struct LispmTraceCallbacks lispm_trace;
-#define LISPM_TRACE(event, ...)                                                                                        \
-  do {                                                                                                                 \
-    if (lispm_trace.event) lispm_trace.event(__VA_ARGS__);                                                             \
-  } while (0)
-#else
-#define LISPM_TRACE(...) ((void)0)
-#endif
-
-/* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
-#define LISPM_EVAL_CHECK(cond, ctx, event, ...)                                                                        \
-  do {                                                                                                                 \
-    if (!(cond)) {                                                                                                     \
-      LISPM_TRACE(event, __FILE__, __LINE__, ##__VA_ARGS__);                                                           \
-      lispm_panic(ctx);                                                                                                \
-    }                                                                                                                  \
-  } while (0)
-
 __attribute__((noreturn)) void lispm_panic(Sym ctx);
 
 /* pc must be between M.program and M.program_end */
-Sym lispm_parse(const char *pc, const char *pc_end);
+Sym lispm_parse_quote(const char *pc, const char *pc_end);
 Sym lispm_eval(const char *pc, const char *pc_end);
 
-Sym lispm_st_obj_alloc(unsigned k, Sym *vals);
+unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit);
+
+Sym lispm_st_obj_alloc(unsigned k);
 static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
-  Sym cons[2] = {car, cdr};
-  return lispm_st_obj_alloc(LISPM_ST_OBJ_CONS, cons);
+  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_CONS);
+  lispm.sp[0] = car, lispm.sp[1] = cdr;
+  return res;
 }
 
 Sym *lispm_st_obj_unpack(Sym s);
-Sym *lispm_cons_unpack_user(Sym a);
-
-Sym lispm_evcap_quote(Sym a, Sym c);
-Sym lispm_evquote(Sym a);
-void lispm_args_unpack2(Sym a, Sym *f, Sym *s);

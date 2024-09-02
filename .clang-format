@@ -1,9 +1,5 @@
 BasedOnStyle: LLVM
 AlignArrayOfStructures: Left
-AlignConsecutiveAssignments:
-  Enabled: true
-  AcrossEmptyLines: false
-  AcrossComments: false
 AlignConsecutiveMacros: true
 AllowShortBlocksOnASingleLine: Always
 AllowShortIfStatementsOnASingleLine: true
