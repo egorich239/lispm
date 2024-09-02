@@ -18,17 +18,16 @@ AB
 ; problems, e.g. should we capture `A` in `(lambda (f) (f A))`? 
 let-quote-bound
 (let ((q quote) (AB 'AB)) (q AB))
-err!
+#err!
 
 let-quote-bound2
 (let ((q quote) (AB 'AB)) (((lambda () q)) AB))
-err!
+#err!
 
 let-quote-quote1
 (let ((AB (quote T))) ((quote quote) AB))
-err!
+#err!
 
 let-quote-quote2
 (let ((AB 'T)) ('quote AB))
-err!
-
+#err!

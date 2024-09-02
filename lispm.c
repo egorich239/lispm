@@ -4,9 +4,10 @@
 #define C lispm_cons_alloc
 
 /* error reporting */
+static Sym SYM_ERR;
 __attribute__((noreturn)) void lispm_panic(Sym ctx) {
   LISPM_ASSERT(M.stack);
-  M.stack[0] = LISPM_SYM_ERR;
+  M.stack[0] = SYM_ERR;
   M.stack[1] = ctx;
   lispm_rt_throw();
 }
@@ -109,8 +110,9 @@ static Sym htable_ensure(const char *b, const char *e) {
 
 ensure_insert:
   LISPM_EVAL_CHECK(M.tp + (e - b + 1) <= M.strings_end, LISPM_SYM_NIL, oom_strings);
-  entry[0] = ((M.tp - M.strings) << 2) | 2;
-  entry[1] = PARSE_SYM_UNBOUND;
+  unsigned assignable = *b == '#' ? 0 : 2;
+  entry[0] = ((M.tp - M.strings) << 2) | assignable;
+  entry[1] = assignable ? PARSE_SYM_UNBOUND : lit;
   while (b != e)
     *M.tp++ = *b++;
   *M.tp++ = 0;
@@ -151,6 +153,9 @@ static Sym lex(void) {
       if (c <= ' ') continue;
       if (c == ';') {
         state = S_COMMENT;
+        continue;
+      } else if (c == '#') {
+        token_begin = M.pc, state = S_ATOM;
         continue;
       }
       if (LEX_IS_TOK(cat)) return ++M.pc, TOK_SYM(c);
@@ -275,14 +280,14 @@ static Sym parse_let(void) {
     parse_frame_leave();
   return C(cons_reverse_inplace(asgns), expr);
 }
-static Sym LITERAL_QUOTE; /* initialized during builtin initialization */
+static Sym SYM_QUOTE; /* initialized during builtin initialization */
 static Sym parse(Sym tok, int is_quote) {
   if (lispm_sym_is_shortnum(tok)) return tok;
   if (lispm_sym_is_literal(tok)) {
     if (!is_quote) parse_frame_use(tok);
     return tok;
   }
-  if (tok == TOK_QUOTE) return C(LITERAL_QUOTE, parse(lex(), 1));
+  if (tok == TOK_QUOTE) return C(SYM_QUOTE, parse(lex(), 1));
 
   LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
   if ((tok = lex()) == TOK_RPAREN) return LISPM_SYM_NIL;
@@ -399,9 +404,8 @@ static Sym eval(Sym syn) {
 
 /* API */
 Sym lispm_eval(const char *pc, const char *pc_end) { return eval(parse1(pc, pc_end, 0)); }
-static inline int lispm_sym_is_t(Sym e) { return e == LISPM_SYM_T; }
 static inline int lispm_is_valid_result(Sym e) {
-  return lispm_sym_is_nil(e) || lispm_sym_is_t(e) || lispm_sym_is_atom(e) || lispm_sym_is_cons(e);
+  return lispm_sym_is_nil(e) || lispm_sym_is_atom(e) || lispm_sym_is_cons(e);
 }
 static void lispm_main(void) {
   Sym r = lispm_eval(M.pc, M.program_end);
@@ -422,9 +426,11 @@ void lispm_init(void) {
   for (const struct Builtin *bi = M.builtins; bi->name; ++bi, ++i) {
     const char *n = bi->name;
     Sym s = htable_ensure(n, n + __builtin_strlen(n));
-    unsigned *entry = M.htable + lispm_literal_ht_offs(s);
-    entry[0] &= ~2u;
-    entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
+    if (htable_entry_is_assignable(s)) {
+      unsigned *entry = M.htable + lispm_literal_ht_offs(s);
+      entry[0] &= ~2u;
+      entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
+    }
     if (bi->store) *bi->store = s;
   }
 }
@@ -446,6 +452,7 @@ unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit) {
   return lispm_sym_is_nil(it) ? cntr : ~0u;
 }
 
+static Sym SYM_T;
 static Sym LIST(Sym a) { return a; }
 static Sym CONS(Sym a) {
   Sym xy[2];
@@ -463,20 +470,20 @@ static Sym CDR(Sym a) { return CONS_UNPACK(a, 1); }
 static Sym ATOM(Sym a) {
   Sym arg;
   LISPM_EVAL_CHECK(lispm_list_scan(&arg, a, 1) == 1, a, panic, "single arguments expected, got: ", a);
-  return lispm_sym_is_atom(arg) ? LISPM_SYM_T : LISPM_SYM_NIL;
+  return lispm_sym_is_atom(arg) ? SYM_T : LISPM_SYM_NIL;
 }
 static Sym EQ(Sym a) {
   Sym xy[2];
   LISPM_EVAL_CHECK(lispm_list_scan(xy, a, 2) == 2, a, panic, "two arguments expected, got: ", a);
-  return lispm_sym_is_atom(xy[0]) && xy[0] == xy[1] ? LISPM_SYM_T : LISPM_SYM_NIL;
+  return lispm_sym_is_atom(xy[0]) && xy[0] == xy[1] ? SYM_T : LISPM_SYM_NIL;
 }
 static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
 static const struct Builtin LISPM_CORE_BUILTINS[]
     __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
-        {"t"},
-        {"err!"},
-        {"quote", evquote, parse_quote, &LITERAL_QUOTE},
+        {"#t", 0, 0, &SYM_T},
+        {"#err!", 0, 0, &SYM_ERR},
+        {"quote", evquote, parse_quote, &SYM_QUOTE},
         {"cond", evcon, parse_con},
         {"lambda", evlambda, parse_lambda},
         {"let", evlet, parse_let},

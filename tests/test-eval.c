@@ -18,7 +18,6 @@ unsigned htable[4 * 1024 * 1024];
 
 static int sym_equal(Sym a, Sym b) {
   if (lispm_sym_is_atom(a) && lispm_sym_is_atom(b)) return a == b;
-  if (a == LISPM_SYM_ERR) return htable[lispm_literal_ht_offs(b) + 1] == LISPM_SYM_ERR;
   if (lispm_sym_is_atom(a) || lispm_sym_is_atom(b)) return 0;
   if (!lispm_sym_is_cons(a) || !lispm_sym_is_cons(b)) return 0;
 
