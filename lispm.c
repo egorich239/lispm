@@ -3,9 +3,6 @@
 #define M lispm
 #define C lispm_cons_alloc
 
-/* special values */
-#define LISPM_MAKE_SPECIAL_VALUE(val) (((val) << 4) | 15u)
-
 /* error reporting */
 static Sym SYM_ERR;
 __attribute__((noreturn)) void lispm_panic(Sym ctx) {
@@ -135,7 +132,7 @@ static const struct Builtin *builtin(Sym lit) {
 /* lexer */
 #include "lexer.inc.h"
 
-#define TOK_SYM(c) LISPM_MAKE_SPECIAL_VALUE(((unsigned)(c)))
+#define TOK_SYM(c) (((c) << 8) | 19u)
 #define TOK_LPAREN TOK_SYM('(')
 #define TOK_RPAREN TOK_SYM(')')
 #define TOK_QUOTE  TOK_SYM('\'')
