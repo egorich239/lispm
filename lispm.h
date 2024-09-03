@@ -66,7 +66,7 @@ typedef unsigned Sym;
 struct __attribute__((aligned(16))) Builtin {
   const char *name;
   Sym (*eval)(Sym args);
-  Sym (*parse)(void);
+  Sym (*sema)(Sym args);
   Sym *store; /* if non-NULL, the registered literal is stored into this location */
 };
 /* Convenience macro to implement extensions */
@@ -320,11 +320,11 @@ static inline int lispm_sym_is_lambda(Sym s) { return lispm_st_obj_kind(s) == LI
 static inline int lispm_sym_is_special(Sym s) { return (s & 3u) == 3u; }
 
 /* builtin functions */
-#define LISPM_MAKE_BUILTIN_SYM(ft_offs) (((ft_offs) << 4) | 3u)
-static inline int lispm_sym_is_builtin_sym(Sym s) { return (s & 15u) == 3u; }
+#define LISPM_MAKE_BUILTIN_SYM(ft_offs) (((ft_offs) << 8) | 3u)
+static inline int lispm_sym_is_builtin_sym(Sym s) { return (s & 255u) == 3u; }
 static inline unsigned lispm_builtin_sym_offs(Sym s) {
   LISPM_ASSERT(lispm_sym_is_builtin_sym(s));
-  return s >> 4;
+  return s >> 8;
 }
 
 enum { LISPM_SYM_NIL = 0 };

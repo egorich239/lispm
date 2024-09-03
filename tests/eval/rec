@@ -1,0 +1,70 @@
+Y-comb
+(let
+    (
+        ; Thank you, Wikipedia! :-)
+        (Y (lambda (f)
+            ((lambda (i) (i i))
+                (lambda (i)
+                    (f (lambda (x) ((i i) x)))))))
+        
+        (fact (lambda (fact) (lambda (n) (cond
+            ((eq? 1 n) 1)
+            (#t (* n (fact (- n 1)))) 
+        ))))
+        (fact (Y fact))
+    )
+    (fact 5)
+)
+120
+
+; The above does not seem to generalize to functions of multiple arguments
+; in our language, but the following trick works.
+simple-recursion
+(let
+    (
+        (fact (lambda (fact) (lambda (n s) (cond
+            ((eq? 1 n) 1)
+            (#t (* n ((fact fact) (- n s) s))) 
+        ))))
+
+        (fact (fact fact))
+    )
+    (fact 5 2)
+)
+15
+
+letrec-recursion
+(letrec
+    (
+        (fact (lambda (n s) (cond
+            ((eq? 1 n) 1)
+            (#t (* n (fact (- n s) s))) 
+        )))
+    )
+    (fact 5 2)
+)
+15
+
+letrec-corecursive
+(letrec
+    (
+        (tic-end 777)
+        (tac-end 999)
+        (tic (lambda (seq) (cond
+            ((eq? () seq) (list tic-end))
+            (#t (cons (* 2 (car seq)) (tac (cdr seq)))) 
+        )))
+
+        (tac (lambda (seq) (cond
+            ((eq? () seq) (list tac-end))
+            (#t (cons (* 3 (car seq)) (tic (cdr seq)))) 
+        )))
+    )
+    (list 
+        (tic '(5 2))
+        (tic '(1 2 3)))
+)
+(
+    (10 6 777)
+    (2 6 6 999)
+)
