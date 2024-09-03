@@ -326,10 +326,6 @@ static inline unsigned lispm_builtin_sym_offs(Sym s) {
   LISPM_ASSERT(lispm_sym_is_builtin_sym(s));
   return s >> 4;
 }
-Sym lispm_builtin_as_sym(const struct Builtin *bi);
-
-/* special values */
-#define LISPM_MAKE_SPECIAL_VALUE(val) (((val) << 4) | 15u)
 
 enum { LISPM_SYM_NIL = 0 };
 

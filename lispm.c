@@ -3,6 +3,9 @@
 #define M lispm
 #define C lispm_cons_alloc
 
+/* special values */
+#define LISPM_MAKE_SPECIAL_VALUE(val) (((val) << 4) | 15u)
+
 /* error reporting */
 static Sym SYM_ERR;
 __attribute__((noreturn)) void lispm_panic(Sym ctx) {
@@ -96,7 +99,7 @@ static inline unsigned htable_hashf(const char *b, const char *e, unsigned seed)
   LISPM_ASSERT(hash < M.htable_index_size);
   return hash;
 }
-static Sym htable_ensure(const char *b, const char *e) {
+static Sym htable_ensure(const char *b, const char *e, int is_lex) {
   unsigned offset = 5381, *entry;
   Sym lit;
   for (int attempt = 0; attempt < LISPM_STRINGS_INDEX_LOOKUP_LIMIT; ++attempt) {
@@ -110,7 +113,8 @@ static Sym htable_ensure(const char *b, const char *e) {
 
 ensure_insert:
   LISPM_EVAL_CHECK(M.tp + (e - b + 1) <= M.strings_end, LISPM_SYM_NIL, oom_strings);
-  unsigned assignable = *b == '#' ? 0 : 2;
+  LISPM_EVAL_CHECK(*b != '#' || !is_lex, LISPM_SYM_NIL, lex_error);
+  unsigned assignable = *b == '#' || *b == ':' ? 0 : 2;
   entry[0] = ((M.tp - M.strings) << 2) | assignable;
   entry[1] = assignable ? PARSE_SYM_UNBOUND : lit;
   while (b != e)
@@ -122,7 +126,6 @@ ensure_insert:
 }
 
 /* builtins support */
-Sym lispm_builtin_as_sym(const struct Builtin *bi) { return LISPM_MAKE_BUILTIN_SYM(bi - lispm.builtins); }
 static const struct Builtin *builtin(Sym lit) {
   if (!lispm_sym_is_literal(lit)) return 0;
   Sym val = htable_entry_get_assoc(lit);
@@ -185,7 +188,7 @@ static Sym lex(void) {
 lex_fail:
   LISPM_EVAL_CHECK(0, LISPM_SYM_NIL, lex_error);
 lex_atom:
-  return htable_ensure(token_begin, M.pc);
+  return htable_ensure(token_begin, M.pc, 1);
 lex_num:
   if (token_val != 0 && *token_begin == '0') goto lex_fail;
   return lispm_make_shortnum(token_val);
@@ -425,7 +428,7 @@ void lispm_init(void) {
   int i = 0;
   for (const struct Builtin *bi = M.builtins; bi->name; ++bi, ++i) {
     const char *n = bi->name;
-    Sym s = htable_ensure(n, n + __builtin_strlen(n));
+    Sym s = htable_ensure(n, n + __builtin_strlen(n), 0);
     if (htable_entry_is_assignable(s)) {
       unsigned *entry = M.htable + lispm_literal_ht_offs(s);
       entry[0] &= ~2u;

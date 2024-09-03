@@ -1,0 +1,28 @@
+quote-hash-t
+(quote #t)
+#t
+
+quote-colon
+(quote :abra-cadabra)
+:abra-cadabra
+
+eval-hash-t
+#t
+#t
+
+eval-colon
+:moo
+:moo
+
+eval-non-leading-colon
+moo:
+#err!
+
+; TODO: ideally we'd test these as well, but these are lexer/parser failures...
+;colon-assignment
+;(let ((:foo 3)) :foo)
+;#err!
+;
+; double-hash
+; ##a
+; #err!
