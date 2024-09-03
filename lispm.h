@@ -66,7 +66,7 @@ typedef unsigned Sym;
 struct __attribute__((aligned(16))) Builtin {
   const char *name;
   Sym (*eval)(Sym args);
-  Sym (*parse)(void);
+  Sym (*sema)(Sym args);
   Sym *store; /* if non-NULL, the registered literal is stored into this location */
 };
 /* Convenience macro to implement extensions */
