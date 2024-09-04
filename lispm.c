@@ -109,7 +109,7 @@ static inline unsigned htable_hashf(const char *b, const char *e, unsigned seed)
 static Sym htable_ensure(const char *b, const char *e, int is_lex) {
   unsigned offset = 5381, *entry;
   Sym lit;
-  for (int attempt = 0; attempt < LISPM_STRINGS_INDEX_LOOKUP_LIMIT; ++attempt) {
+  for (int attempt = 0; attempt < LISPM_CONFIG_HTABLE_LOOKUP_LIMIT; ++attempt) {
     offset = htable_hashf(b, e, offset);
     entry = M.htable + (2 * offset);
     lit = lispm_make_literal(2 * offset);
