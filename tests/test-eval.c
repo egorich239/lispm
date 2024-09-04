@@ -7,8 +7,6 @@
 #include "debug.h"
 #include "lispm.h"
 
-extern struct Builtin lispm_builtins[];
-
 extern const char _binary_test_eval_tests_txt_start[];
 extern const char _binary_test_eval_tests_txt_end[];
 
@@ -27,11 +25,9 @@ static int sym_equal(Sym a, Sym b) {
 }
 
 struct Lispm lispm = {
-    .builtins = lispm_builtins,
-
     /*stack*/
     .stack = stack,
-    .sp = stack + (sizeof(stack) / sizeof(*stack)),
+    .stack_end = stack + (sizeof(stack) / sizeof(*stack)),
 
     /*strings*/
     .strings = strings,
@@ -75,7 +71,6 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (*M.pc <= ' ') continue;
-    M.sp = M.stack + (sizeof(stack) / sizeof(*stack));
     Sym testname = lispm_parse_quote(M.pc, M.program_end);
     if (!lispm_sym_is_literal(testname)) {
       fprintf(stderr, "Expected a test name literal, got: ");

@@ -7,8 +7,6 @@
 #include "debug.h"
 #include "lispm.h"
 
-extern struct Builtin lispm_builtins[];
-
 extern const char _binary_test_captures_tests_txt_start[];
 extern const char _binary_test_captures_tests_txt_end[];
 
@@ -63,7 +61,7 @@ static void trace_lambda(Sym lambda) {
     failure = 1;
     return;
   }
-  Sym act   = lispm_st_obj_unpack(lambda)[0];
+  Sym act = lispm_st_obj_unpack(lambda)[0];
   Sym *cons = lispm_st_obj_unpack(next_lambda), exp = cons[0];
   next_lambda = cons[1];
   if (!sym_equal_capture(exp, act)) {
@@ -78,24 +76,22 @@ static void trace_lambda(Sym lambda) {
 }
 
 struct Lispm lispm = {
-    .builtins = lispm_builtins,
-
     /*stack*/
     .stack = stack,
-    .sp    = stack + (sizeof(stack) / sizeof(*stack)),
+    .stack_end = stack + (sizeof(stack) / sizeof(*stack)),
 
     /*strings*/
-    .strings     = strings,
+    .strings = strings,
     .strings_end = strings + sizeof(strings),
-    .tp          = strings,
+    .tp = strings,
 
     /*program*/
-    .program     = _binary_test_captures_tests_txt_start,
+    .program = _binary_test_captures_tests_txt_start,
     .program_end = _binary_test_captures_tests_txt_end,
-    .pc          = _binary_test_captures_tests_txt_start,
+    .pc = _binary_test_captures_tests_txt_start,
 
     /*htable*/
-    .htable     = htable,
+    .htable = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
 };
 
@@ -114,10 +110,10 @@ static void lex_error(const char *file, unsigned line) {
 
 int main(int argc, char *argv[]) {
   int comment = 0;
-  failure     = 0;
+  failure = 0;
   lispm_init();
   lispm_trace_stack();
-  lispm_trace.lex_error   = lex_error;
+  lispm_trace.lex_error = lex_error;
   lispm_trace.parse_error = parse_error;
   lispm_trace.lambda_cons = trace_lambda;
   for (; M.pc < M.program_end; ++M.pc) {
@@ -127,9 +123,8 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (*M.pc <= ' ') continue;
-    M.sp         = M.stack + (sizeof(stack) / sizeof(*stack));
-    next_lambda  = lispm_parse_quote(M.pc, M.program_end);
-    Sym actual   = lispm_exec();
+    next_lambda = lispm_parse_quote(M.pc, M.program_end);
+    Sym actual = lispm_exec();
     Sym expected = lispm_parse_quote(M.pc, M.program_end);
 
     if (!sym_equal(actual, expected)) {

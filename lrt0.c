@@ -1,4 +1,5 @@
 #include "lrt0.h"
+#include "lispm-builtins.h"
 #include "lispm.h"
 
 #define M lispm
@@ -138,20 +139,18 @@ static Sym IMPORT(Sym ptr) {
   return lispm_eval(begin, end);
 }
 
-static Sym SYM_MODULO;
-LISPM_BUILTINS_EXT(LRT0_SYMS) = {
-    {"#modulo", 0, 0, &SYM_MODULO}
-};
+LISPM_BUILTINS_EXT(LRT0_SYMS) = {{"#modulo"}};
 
 typedef enum { OP_OR, OP_AND, OP_XOR, OP_ADD, OP_SUB, OP_MUL } BinOp;
 static int binop_unpack(Sym args, int arith, Sym *p, Sym *q) {
   Sym pqm[3] = {};
   const unsigned argc = lispm_list_scan(pqm, args, arith ? 3 : 2);
   LISPM_EVAL_CHECK(((argc == 2) || (arith && argc == 3)) && lispm_sym_is_shortnum(pqm[0]) &&
-                       lispm_sym_is_shortnum(pqm[1]) && (lispm_sym_is_nil(pqm[2]) || SYM_MODULO == pqm[2]),
+                       lispm_sym_is_shortnum(pqm[1]) &&
+                       (lispm_sym_is_nil(pqm[2]) || lispm_sym_from_builtin(LRT0_SYMS + 0) == pqm[2]),
                    args, panic, "p, q[, #modulo] expected, got: ", args);
   *p = pqm[0], *q = pqm[1];
-  return SYM_MODULO == pqm[2];
+  return lispm_sym_from_builtin(LRT0_SYMS + 0) == pqm[2];
 }
 static Sym binop(Sym args, BinOp op, int arith) {
   Sym p, q;

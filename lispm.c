@@ -1,13 +1,36 @@
 #include "lispm.h"
+#include "lispm-builtins.h"
+#include "lispm-obj.h"
 
 #define M lispm
 #define C lispm_cons_alloc
 
+extern struct Builtin lispm_builtins_start[];
+extern struct Builtin lispm_builtins_end[];
+
+static Sym evquote(Sym arg) { return arg; }
+static Sym sema_quote(Sym args);
+
+static const struct Builtin LISPM_CORE_BUILTINS[]
+    __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
+        {"#t"},
+        {"#err!"},
+        {"quote", evquote, sema_quote},
+};
+#define BUILTIN_T     (LISPM_CORE_BUILTINS + 0)
+#define BUILTIN_ERR   (LISPM_CORE_BUILTINS + 1)
+#define BUILTIN_QUOTE (LISPM_CORE_BUILTINS + 2)
+
+/* builtins */
+Sym lispm_sym_from_builtin(const struct Builtin *bi) {
+  LISPM_ASSERT(lispm_builtins_start <= bi && bi < lispm_builtins_end);
+  return M.stack_end[bi - lispm_builtins_end];
+}
+
 /* error reporting */
-static Sym SYM_ERR;
 __attribute__((noreturn)) void lispm_panic(Sym ctx) {
   LISPM_ASSERT(M.stack);
-  M.stack[0] = SYM_ERR;
+  M.stack[0] = lispm_sym_from_builtin(BUILTIN_ERR);
   M.stack[1] = ctx;
   lispm_rt_throw();
 }
@@ -35,10 +58,12 @@ static Sym list_reverse_inplace(Sym li) {
 }
 
 /* stack functions */
+static Sym *lispm_st_obj_alloc0(unsigned size) {
+  LISPM_EVAL_CHECK(M.stack + LISPM_STACK_BOTTOM_OFFSET + size <= M.sp, LISPM_SYM_NIL, oom_stack);
+  return M.sp -= size;
+}
 Sym lispm_st_obj_alloc(unsigned k) {
-  M.sp -= lispm_st_obj_st_size(k);
-  LISPM_EVAL_CHECK(M.stack + LISPM_STACK_BOTTOM_OFFSET < M.sp, LISPM_SYM_NIL, oom_stack);
-  return lispm_make_st_obj(k, M.sp - M.stack);
+  return lispm_make_st_obj(k, lispm_st_obj_alloc0(lispm_st_obj_st_size(k)) - M.stack);
 }
 Sym *lispm_st_obj_unpack(Sym s) { return M.stack + lispm_st_obj_st_offs(s); }
 static Sym gc0(Sym s, unsigned high_mark, unsigned depth) {
@@ -136,7 +161,7 @@ ensure_insert:
 static const struct Builtin *builtin(Sym lit) {
   if (!lispm_sym_is_literal(lit)) return 0;
   Sym val = htable_entry_get_assoc(lit);
-  return lispm_sym_is_builtin_sym(val) ? M.builtins + lispm_builtin_sym_offs(val) : 0;
+  return lispm_sym_is_builtin_sym(val) ? lispm_builtins_start + lispm_builtin_sym_offs(val) : 0;
 }
 
 /* lexer */
@@ -244,10 +269,9 @@ static Sym parse_frame_leave(void) {
   return captures;
 }
 
-static Sym SYM_QUOTE; /* initialized during builtin initialization */
 static Sym parse(Sym tok) {
   if (lispm_sym_is_atom(tok)) return tok;
-  if (tok == TOK_QUOTE) return C(SYM_QUOTE, C(parse(lex()), LISPM_SYM_NIL));
+  if (tok == TOK_QUOTE) return C(lispm_sym_from_builtin(BUILTIN_QUOTE), C(parse(lex()), LISPM_SYM_NIL));
 
   LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
   if ((tok = lex()) == TOK_RPAREN) return LISPM_SYM_NIL;
@@ -365,7 +389,6 @@ static Sym sema(Sym syn) {
 
 /* eval */
 static Sym eval(Sym e);
-static Sym evquote(Sym arg) { return arg; }
 static Sym evlambda(Sym lambda) {
   Sym *proto = lispm_st_obj_unpack(lambda), captures = LISPM_SYM_NIL;
   for (Sym it = proto[0], *cons, name; it != LISPM_SYM_NIL;) {
@@ -471,7 +494,9 @@ static void lispm_main(void) {
 }
 
 void lispm_init(void) {
+  /* TODO: this function can throw, and it is usually called unguarded, which is wrong */
   LISPM_ASSERT(lispm_is_valid_config());
+  M.sp = M.stack_end;
   M.tp = M.strings + 4; /* we use zero as sentinel value for missing entry in htable,
                            hence no value can have a zero offset into the strings table */
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
@@ -479,16 +504,18 @@ void lispm_init(void) {
   M.parse_frame = LISPM_SYM_NIL;
   M.frame_depth = 1;
 
-  int i = 0;
-  for (const struct Builtin *bi = M.builtins; bi->name; ++bi, ++i) {
-    const char *n = bi->name;
+  const unsigned bilen = lispm_builtins_end - lispm_builtins_start;
+  Sym *bisym = lispm_st_obj_alloc0(bilen);
+  for (unsigned i = 0; i < bilen; ++i) {
+    const char *n = lispm_builtins_start[i].name;
+    if (!n) continue;
     Sym s = htable_ensure(n, n + __builtin_strlen(n), 0);
     if (htable_entry_is_assignable(s)) {
       unsigned *entry = M.htable + lispm_literal_ht_offs(s);
       entry[0] &= ~2u;
       entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     }
-    if (bi->store) *bi->store = s;
+    bisym[i] = s;
   }
 }
 
@@ -498,7 +525,6 @@ Sym lispm_exec(void) {
   return M.stack[0];
 }
 
-static Sym SYM_T;
 static Sym LIST(Sym a) { return a; }
 static Sym CONS(Sym a) {
   Sym xy[2];
@@ -516,20 +542,17 @@ static Sym CDR(Sym a) { return CONS_UNPACK(a, 1); }
 static Sym ATOM(Sym a) {
   Sym arg;
   LISPM_EVAL_CHECK(lispm_list_scan(&arg, a, 1) == 1, a, panic, "single arguments expected, got: ", a);
-  return lispm_sym_is_atom(arg) ? SYM_T : LISPM_SYM_NIL;
+  return lispm_sym_is_atom(arg) ? lispm_sym_from_builtin(BUILTIN_T) : LISPM_SYM_NIL;
 }
 static Sym EQ(Sym a) {
   Sym xy[2];
   LISPM_EVAL_CHECK(lispm_list_scan(xy, a, 2) == 2, a, panic, "two arguments expected, got: ", a);
-  return lispm_sym_is_atom(xy[0]) && xy[0] == xy[1] ? SYM_T : LISPM_SYM_NIL;
+  return lispm_sym_is_atom(xy[0]) && xy[0] == xy[1] ? lispm_sym_from_builtin(BUILTIN_T) : LISPM_SYM_NIL;
 }
 static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
-static const struct Builtin LISPM_CORE_BUILTINS[]
+static const struct Builtin LISPM_SYN_BUILTINS[]
     __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
-        {"#t", 0, 0, &SYM_T},
-        {"#err!", 0, 0, &SYM_ERR},
-        {"quote", evquote, sema_quote, &SYM_QUOTE},
         {"cond", evcon, sema_con},
         {"lambda", evlambda, sema_lambda},
         {"let", evlet, sema_let},

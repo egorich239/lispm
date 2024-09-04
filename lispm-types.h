@@ -47,55 +47,26 @@ typedef unsigned Sym;
 
 enum { LISPM_SYM_NIL = 0 };
 
-/*
- * Arguments are provided as a SYM_NIL-terminated CONS-sequence.
- *
- * If evcap is non-zero, the builtin is treated as special form, i.e. it receives its args unevaluated.
- * This callback is used to evaluate the list of args captured by this special form.
- *
- * We pack builtins into special sections, and rely on linker script to organize them into a single
- * contigous array, and as sections are 16-bytes aligned, we align the struct similarly to avoid
- * mishaps at concatenation of various sections.
- */
-struct __attribute__((aligned(16))) Builtin {
-  const char *name;
-  Sym (*eval)(Sym args);
-  Sym (*sema)(Sym args);
-  Sym *store; /* if non-NULL, the registered literal is stored into this location */
-};
-/* Convenience macro to implement extensions */
-#define LISPM_BUILTINS_EXT(name)                                                                                       \
-  static const struct Builtin name[] __attribute__((section(".lispm.rodata.builtins.ext"), aligned(16), used))
-
 /* State of LISPM */
 struct Lispm {
-  /* Array of builtins, terminates with an entry with NULL `name`. */
-  const struct Builtin *builtins;
-
   /* Location of the stack bottom. */
-  Sym *stack;
+  Sym *stack, *stack_end;
   /* Stack pointer. Grows down. */
   Sym *sp;
 
   /* Beginning of the strings storage. */
-  char *strings;
-  /* Pointer past the end of strings storage. */
-  char *strings_end;
+  char *strings, *strings_end;
   /* Pointer past the end of the used part of string storage.
      Initialized by lispm_init(). */
   char *tp;
 
   /* Beginning of the program page. */
-  const char *program;
-  /* Pointer past the end of the program page. */
-  const char *program_end;
+  const char *program, *program_end;
   /* Pointer to the next lexeme. */
   const char *pc;
 
   /* Beginning of hash table */
-  unsigned *htable;
-  /* Pointer past the end of hash_table, must contain a power-of-two number of words. */
-  unsigned *htable_end;
+  unsigned *htable, *htable_end;
 
   /* Internal values */
   unsigned htable_index_size;

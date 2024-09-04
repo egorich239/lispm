@@ -1,8 +1,11 @@
 #include "debug.h"
+#include "lispm-builtins.h"
 #include "lispm.h"
 #include "lrt0.h"
 
 #include <stdio.h>
+
+extern const struct Builtin lispm_builtins_start[];
 
 #if LISPM_CONFIG_VERBOSE
 struct LispmTraceCallbacks lispm_trace = {};
@@ -33,7 +36,7 @@ void lispm_print_short(Sym sym) {
     return;
   }
   if (lispm_sym_is_builtin_sym(sym)) {
-    fprintf(stderr, "<builtin %s>", lispm.builtins[lispm_builtin_sym_offs(sym)].name);
+    fprintf(stderr, "<builtin %s>", lispm_builtins_start[lispm_builtin_sym_offs(sym)].name);
     return;
   }
   if (lispm_sym_is_special(sym)) {

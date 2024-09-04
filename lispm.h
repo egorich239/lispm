@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lispm-builtins.h"
 #include "lispm-obj.h"
 #include "lispm-rt.h"
 #include "lispm-trace.h"
@@ -20,13 +21,13 @@ extern struct Lispm lispm;
 static inline int lispm_is_power_of_two(unsigned i) { return i && !(i & (i - 1)); }
 static inline int lispm_is_valid_config(void) {
   const struct Lispm *m = &lispm;
-  return m->stack + LISPM_STACK_BOTTOM_OFFSET < m->sp     /**/
-         && m->strings + 8 <= m->strings_end              /**/
-         && m->program <= m->pc && m->pc < m->program_end /**/
-         && m->htable + 1024 <= m->htable_end             /**/
+  return m->stack + LISPM_STACK_BOTTOM_OFFSET < m->stack_end /**/
+         && m->strings + 8 <= m->strings_end                 /**/
+         && m->program <= m->pc && m->pc < m->program_end    /**/
+         && m->htable + 1024 <= m->htable_end                /**/
          && lispm_is_power_of_two(m->htable_end - m->htable)
          /* we also want all offsets to fit into short unsigned */
-         && lispm_shortnum_can_represent(m->sp - m->stack)            /**/
+         && lispm_shortnum_can_represent(m->stack_end - m->stack)     /**/
          && lispm_shortnum_can_represent(m->strings_end - m->strings) /**/
          && lispm_shortnum_can_represent(m->program_end - m->program) /**/
          && lispm_shortnum_can_represent(m->htable_end - m->htable);
@@ -59,3 +60,4 @@ static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
   return res;
 }
 
+Sym lispm_sym_from_builtin(const struct Builtin *bi);
