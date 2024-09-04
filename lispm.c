@@ -8,27 +8,20 @@
 extern struct Builtin lispm_builtins_start[];
 extern struct Builtin lispm_builtins_end[];
 
-static Sym evquote(Sym arg) { return arg; }
-static Sym sema_quote(Sym args);
-
-static const struct Builtin LISPM_CORE_BUILTINS[]
-    __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
-        {"#err!"},
-        {"quote", evquote, sema_quote},
-};
-#define BUILTIN_ERR   (LISPM_CORE_BUILTINS + 0)
-#define BUILTIN_QUOTE (LISPM_CORE_BUILTINS + 1)
+static const struct Builtin CORE[];
+#define BUILTIN_ERR_INDEX   (0)
+#define BUILTIN_QUOTE_INDEX (1)
 
 /* builtins */
 Sym lispm_sym_from_builtin(const struct Builtin *bi) {
   LISPM_ASSERT(lispm_builtins_start <= bi && bi < lispm_builtins_end);
-  return M.stack_end[bi - lispm_builtins_end];
+  return M.stack_end[~(bi - lispm_builtins_start)];
 }
 
 /* error reporting */
 __attribute__((noreturn)) void lispm_panic(Sym ctx) {
   LISPM_ASSERT(M.stack);
-  M.stack[0] = lispm_sym_from_builtin(BUILTIN_ERR);
+  M.stack[0] = M.stack_end[~BUILTIN_ERR_INDEX];
   M.stack[1] = ctx;
   lispm_rt_throw();
 }
@@ -56,7 +49,7 @@ static Sym list_reverse_inplace(Sym li) {
 }
 
 /* stack functions */
-static Sym *lispm_st_obj_alloc0(unsigned size) {
+static inline Sym *lispm_st_obj_alloc0(unsigned size) {
   LISPM_EVAL_CHECK(M.stack + LISPM_STACK_BOTTOM_OFFSET + size <= M.sp, LISPM_SYM_NIL, oom_stack);
   return M.sp -= size;
 }
@@ -269,7 +262,7 @@ static Sym parse_frame_leave(void) {
 
 static Sym parse(Sym tok) {
   if (lispm_sym_is_atom(tok)) return tok;
-  if (tok == TOK_QUOTE) return C(lispm_sym_from_builtin(BUILTIN_QUOTE), C(parse(lex()), LISPM_SYM_NIL));
+  if (tok == TOK_QUOTE) return C(M.stack_end[~BUILTIN_QUOTE_INDEX], C(parse(lex()), LISPM_SYM_NIL));
 
   LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
   if ((tok = lex()) == TOK_RPAREN) return LISPM_SYM_NIL;
@@ -387,6 +380,7 @@ static Sym sema(Sym syn) {
 
 /* eval */
 static Sym eval(Sym e);
+static Sym evquote(Sym arg) { return arg; }
 static Sym evlambda(Sym lambda) {
   Sym *proto = lispm_st_obj_unpack(lambda), captures = LISPM_SYM_NIL;
   for (Sym it = proto[0], *cons, name; it != LISPM_SYM_NIL;) {
@@ -503,8 +497,8 @@ void lispm_init(void) {
   M.frame_depth = 1;
 
   const unsigned bilen = lispm_builtins_end - lispm_builtins_start;
-  Sym *bisym = lispm_st_obj_alloc0(bilen);
-  for (unsigned i = 0; i < bilen; ++i) {
+  lispm_st_obj_alloc0(bilen);
+  for (int i = 0; i < bilen; ++i) {
     const char *n = lispm_builtins_start[i].name;
     if (!n) continue;
     Sym s = htable_ensure(n, n + __builtin_strlen(n), 0);
@@ -513,7 +507,7 @@ void lispm_init(void) {
       entry[0] &= ~2u;
       entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     }
-    bisym[i] = s;
+    M.stack_end[~i] = s;
   }
 }
 
@@ -525,11 +519,12 @@ Sym lispm_exec(void) {
 
 static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
-static const struct Builtin LISPM_SYN_BUILTINS[]
-    __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
-        {"cond", evcon, sema_con},
-        {"lambda", evlambda, sema_lambda},
-        {"let", evlet, sema_let},
-        {"letrec", evletrec, sema_letrec},
-        {"panic!", PANIC},
+static const struct Builtin CORE[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
+    {"#err!"},
+    {"quote", evquote, sema_quote},
+    {"cond", evcon, sema_con},
+    {"lambda", evlambda, sema_lambda},
+    {"let", evlet, sema_let},
+    {"letrec", evletrec, sema_letrec},
+    {"panic!", PANIC},
 };
