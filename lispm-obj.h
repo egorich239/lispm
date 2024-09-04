@@ -74,13 +74,9 @@ static inline Sym lispm_shortnum_mul(Sym p, Sym q, int *overflow) {
 /* stack objects */
 enum {
   LISPM_ST_OBJ_CONS = 2u,
-  LISPM_ST_OBJ_LAMBDA = 6u,
-
-  /* an extension object, taking TWO words on stack */
-  LISPM_ST_OBJ_EXT_2 = 10u,
-
-  /* an extension object, taking THREE words on stack */
-  LISPM_ST_OBJ_EXT_3 = 14u,
+  LISPM_ST_OBJ_TRIPLET = 6u,
+  LISPM_ST_OBJ_QUAD = 10u,
+  LISPM_ST_OBJ_PENTA = 14u,
 };
 static inline int lispm_sym_is_st_obj(Sym s) { return (s & 3u) == 2; }
 static inline Sym lispm_make_st_obj(unsigned k, unsigned st_offs) {
@@ -90,8 +86,7 @@ static inline Sym lispm_make_st_obj(unsigned k, unsigned st_offs) {
 static inline unsigned lispm_st_obj_kind(Sym s) { return s & 15u; }
 static inline unsigned lispm_st_obj_st_size(Sym s) {
   LISPM_ASSERT(lispm_sym_is_st_obj(s));
-  /* size of the object on the stack, in words */
-  return (s & 4) ? 3 : 2; /* ((s&4) >> 2) + 2 ?? */
+  return ((s & 4) >> 2) + 2;
 }
 static inline unsigned lispm_st_obj_st_offs(Sym s) {
   LISPM_ASSERT(lispm_sym_is_st_obj(s));
@@ -111,8 +106,8 @@ static inline Sym lispm_make_cons(unsigned st_offs) { return lispm_make_st_obj(L
 static inline int lispm_sym_is_cons(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_CONS; }
 
 /* lambda */
-static inline Sym lispm_make_lambda(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_LAMBDA, st_offs); }
-static inline int lispm_sym_is_lambda(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_LAMBDA; }
+static inline Sym lispm_make_triplet(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_TRIPLET, st_offs); }
+static inline int lispm_sym_is_triplet(Sym s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_TRIPLET; }
 
 /* specials, ctors are defined in macros, to be compile time consts */
 static inline int lispm_sym_is_special(Sym s) { return (s & 3u) == 3u; }

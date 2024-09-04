@@ -21,7 +21,7 @@ static int sym_equal(Sym exp, Sym act) {
     if (!sym_equal(aa[0], bb[0])) return 0;
     return sym_equal(aa[1], bb[1]);
   }
-  if (lispm_sym_is_lambda(act) && lispm_sym_is_cons(exp)) {
+  if (lispm_sym_is_triplet(act) && lispm_sym_is_cons(exp)) {
     Sym *aa = lispm_st_obj_unpack(exp), *bb = lispm_st_obj_unpack(act);
     Sym parms, body;
     aa = lispm_st_obj_unpack(aa[1]), parms = aa[0], *aa = aa[1];

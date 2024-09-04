@@ -34,12 +34,6 @@ Sym lispm_sym_from_builtin(const struct Builtin *bi) {
   return M.stack_end[~(bi - lispm_builtins_start)];
 }
 
-Sym lispm_triplet_alloc(Sym a, Sym b, Sym n) {
-  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_LAMBDA);
-  M.sp[0] = a, M.sp[1] = b, M.sp[2] = n;
-  return res;
-}
-
 /* error reporting */
 __attribute__((noreturn)) void lispm_panic(Sym ctx) {
   LISPM_ASSERT(M.stack);
@@ -61,7 +55,7 @@ unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit) {
 
 static Sym list_reverse_inplace(Sym li, int next_offs) {
   /* not a public interface because it actually changes the object state */
-  LISPM_ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_cons(li) || lispm_sym_is_lambda(li));
+  LISPM_ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_cons(li) || lispm_sym_is_triplet(li));
   Sym cur = li, prev = LISPM_SYM_NIL, next, *cons;
   while (!lispm_sym_is_nil(cur)) {
     cons = lispm_st_obj_unpack(cur), next = cons[next_offs];
@@ -404,7 +398,7 @@ static Sym evlis(Sym li) {
   return list_reverse_inplace(res, 1);
 }
 static Sym evapply_lambda(Sym fn, Sym args) {
-  LISPM_ASSERT(lispm_sym_is_lambda(fn));
+  LISPM_ASSERT(lispm_sym_is_triplet(fn));
   Sym *lambda = lispm_st_obj_unpack(fn), shadow = LISPM_SYM_NIL;
   FOR_EACH_T(name, val, lambda[0]) { /* captures */ shadow = htable_shadow_append(shadow, name, val); }
 
@@ -431,7 +425,7 @@ static Sym evapply(Sym expr) {
   LISPM_ASSERT(lispm_sym_is_atom(f) || lispm_sym_is_cons(f));
 
   const struct Builtin *bi = builtin(f);
-  LISPM_EVAL_CHECK(bi || lispm_sym_is_lambda(fn = eval(f)), f, panic, "a function expected, got: ", f);
+  LISPM_EVAL_CHECK(bi || lispm_sym_is_triplet(fn = eval(f)), f, panic, "a function expected, got: ", f);
 
   if (!bi || !bi->sema) args = evlis(args); /* not a special form, evaluate arguments */
   LISPM_TRACE(apply_enter, f, fn, args);

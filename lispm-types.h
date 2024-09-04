@@ -23,15 +23,23 @@
  *                                     of literal in strings table.
  *                    1: the currently assigned value of the literal.
  * -     <NUM:30> 01: short inline unsigned;
- * - <OFFS:28> 0s 10: stack pointer, the object consume '2+s' consequtive words on stack,
+ * - <OFFS:28> ss 10: stack pointer, the object consume '2+ss' consequtive words on stack,
  *                    starting with <OFFS>;
  *   Stack objects:
  * -    <CONS> 00 10: pair car, cdr;
- * -  <LAMBDA> 01 10: triplet captures, args, body;
- * -    <SPTR> 10 10: an extension stack object, consisting of exactly TWO words starting
- *                    at SPTR position;
- * -    <SPTR> 11 10: an extension stack object, consisting of exactly THREE words starting
- *                    at SPTR position;
+ * -  <TRIPLE> 01 10: triplet, mostly used for lambdas; it is not recommended
+ *                    to reuse triplets for extensions, as a user-constructed lambda could
+ *                    then be easily confused for an extension object; 
+ * -    <QUAD> 10 10: an extension stack object, contains four words; it is recommended
+ *                    to use `#tag` as the first element to differentiate between different
+ *                    extensions; 
+ * -   <PENTA> 10 10: an extension stack object, contains five words; it is recommended
+ *                    to use `#tag` as the first element to differentiate between different
+ *                    extensions.
+ *
+ * If a stack object has recursive nature, then it is recommended to put the reference to
+ * to the next object as the last element of the object. In that case garbage collector will
+ * handle the recursive object without recursive calls (TODO: actually do this GC change).
  *
  * Extensions must adhere to the symbol layout in the part of the stack they use
  * (i.e they must put valid symbols on the stack), because garbage collector assumes that

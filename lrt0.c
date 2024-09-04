@@ -1,10 +1,41 @@
 #include "lrt0.h"
 #include "lispm-builtins.h"
+#include "lispm-obj.h"
 #include "lispm.h"
 
 #define M lispm
 
 enum { PAGE_PROGRAM = 0, PAGE_STRINGS = 1 };
+
+static const struct Builtin LRT0[];
+
+/* Extension symbols: spans
+ * -     <SPAN> 11 10: triplet of short unsigned's page, offs, length; see lrt0.h for more.
+ */
+struct Span {
+  Sym page; /* shortnum */
+  Sym offs; /* shortnum */
+  Sym len;  /* shortnum */
+};
+
+static inline struct Span lispm_make_span(unsigned page, unsigned offs, unsigned len) {
+  LISPM_ASSERT(lispm_shortnum_can_represent(page) && lispm_shortnum_can_represent(offs) &&
+               lispm_shortnum_can_represent(len));
+  return (struct Span){lispm_make_shortnum(page), lispm_make_shortnum(offs), lispm_make_shortnum(len)};
+}
+static Sym lispm_span_alloc(struct Span span) {
+  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_QUAD);
+  M.sp[0] = lispm_sym_from_builtin(LRT0 + 0), M.sp[1] = span.page, M.sp[2] = span.offs, M.sp[3] = span.len;
+  return res;
+}
+static int lispm_sym_is_span(Sym span) {
+  return lispm_sym_is_st_obj(span) && lispm_st_obj_kind(span) == LISPM_ST_OBJ_QUAD &&
+         lispm_st_obj_unpack(span)[0] == lispm_sym_from_builtin(LRT0 + 0);
+}
+static inline struct Span lispm_span_unpack(Sym span) {
+  Sym *arr = lispm_st_obj_unpack(span);
+  return (struct Span){arr[0], arr[1], arr[2]};
+}
 
 static void check_access_read(unsigned access, Sym ptr) {
   LISPM_EVAL_CHECK(access & PAGE_ACCESS_R, ptr, panic, "read access denied: ", ptr);
@@ -140,12 +171,13 @@ static Sym IMPORT(Sym ptr) {
 }
 
 LISPM_BUILTINS_EXT(LRT0) = {
-    {"program",     PROGRAM},
-    {"import",      IMPORT },
-    {"parse",       PARSE  },
-    {"span",        SPAN   },
-    {"str",         STR    },
-    {"chars",       CHARS  },
-    {"getc",        GETC   },
-    {"copy",        COPY   },
+    {"#page"},
+    {"program", PROGRAM},
+    {"import", IMPORT},
+    {"parse", PARSE},
+    {"span", SPAN},
+    {"str", STR},
+    {"chars", CHARS},
+    {"getc", GETC},
+    {"copy", COPY},
 };

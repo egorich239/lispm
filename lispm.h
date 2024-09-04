@@ -59,5 +59,10 @@ static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
   lispm.sp[0] = car, lispm.sp[1] = cdr;
   return res;
 }
+static inline Sym lispm_triplet_alloc(Sym a, Sym b, Sym n) {
+  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_TRIPLET);
+  lispm.sp[0] = a, lispm.sp[1] = b, lispm.sp[2] = n;
+  return res;
+}
 
 Sym lispm_sym_from_builtin(const struct Builtin *bi);

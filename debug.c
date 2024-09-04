@@ -43,23 +43,12 @@ void lispm_print_short(Sym sym) {
     fprintf(stderr, "<special %x>", sym);
     return;
   }
-  if (lispm_sym_is_lambda(sym)) {
+  if (lispm_sym_is_triplet(sym)) {
     Sym *cab = lispm_st_obj_unpack(sym);
     fprintf(stderr, "(lambda ");
     lispm_print_short(cab[1]);
     fprintf(stderr, " ");
     lispm_print_short(cab[2]);
-    fprintf(stderr, ")");
-    return;
-  }
-  if (lispm_sym_is_span(sym)) {
-    fprintf(stderr, "(span ");
-    Sym *pol = lispm_st_obj_unpack(sym);
-    lispm_print_short(pol[0]);
-    fprintf(stderr, " ");
-    lispm_print_short(pol[1]);
-    fprintf(stderr, " ");
-    lispm_print_short(pol[2]);
     fprintf(stderr, ")");
     return;
   }
@@ -113,7 +102,7 @@ static void print_call_frame(struct CallFrame frame) {
   fprintf(stderr, ": ");
   lispm_print_short(frame.args);
   fprintf(stderr, "\n");
-  if (lispm_sym_is_lambda(frame.resolved)) {
+  if (lispm_sym_is_triplet(frame.resolved)) {
     Sym *cap = lispm_st_obj_unpack(frame.resolved);
     fprintf(stderr, "    ");
     lispm_print_short(cap[0]);
@@ -195,7 +184,7 @@ void lispm_dump(Sym sym) {
     for (int i = 0; i < indent; ++i)
       fprintf(stderr, " ");
     fprintf(stderr, sym != LISPM_SYM_NIL ? "]\n" : ")\n");
-  } else if (lispm_sym_is_lambda(sym)) {
+  } else if (lispm_sym_is_triplet(sym)) {
     unsigned offs = lispm_st_obj_st_offs(sym);
     Sym cap = stack[offs], par = stack[offs + 1], body = stack[offs + 2];
     fprintf(stderr, "(lambda\n");
