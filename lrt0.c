@@ -139,67 +139,6 @@ static Sym IMPORT(Sym ptr) {
   return lispm_eval(begin, end);
 }
 
-LISPM_BUILTINS_EXT(LRT0_SYMS) = {{"#modulo"}};
-
-typedef enum { OP_OR, OP_AND, OP_XOR, OP_ADD, OP_SUB, OP_MUL } BinOp;
-static int binop_unpack(Sym args, int arith, Sym *p, Sym *q) {
-  Sym pqm[3] = {};
-  const unsigned argc = lispm_list_scan(pqm, args, arith ? 3 : 2);
-  LISPM_EVAL_CHECK(((argc == 2) || (arith && argc == 3)) && lispm_sym_is_shortnum(pqm[0]) &&
-                       lispm_sym_is_shortnum(pqm[1]) &&
-                       (lispm_sym_is_nil(pqm[2]) || lispm_sym_from_builtin(LRT0_SYMS + 0) == pqm[2]),
-                   args, panic, "p, q[, #modulo] expected, got: ", args);
-  *p = pqm[0], *q = pqm[1];
-  return lispm_sym_from_builtin(LRT0_SYMS + 0) == pqm[2];
-}
-static Sym binop(Sym args, BinOp op, int arith) {
-  Sym p, q;
-  int mod2 = binop_unpack(args, arith, &p, &q);
-  LISPM_EVAL_CHECK(lispm_sym_is_shortnum(p) && lispm_sym_is_shortnum(q), args, panic,
-                   "both operands must be numeric, got: ", args);
-  int overflow;
-  Sym res;
-  switch (op) {
-  case OP_OR:
-    return lispm_shortnum_bitwise_or(p, q);
-  case OP_AND:
-    return lispm_shortnum_bitwise_and(p, q);
-  case OP_XOR:
-    return lispm_shortnum_bitwise_xor(p, q);
-  case OP_ADD:
-    res = lispm_shortnum_add(p, q, &overflow);
-    break;
-  case OP_SUB:
-    res = lispm_shortnum_sub(p, q, &overflow);
-    break;
-  case OP_MUL:
-    res = lispm_shortnum_mul(p, q, &overflow);
-    break;
-  }
-  LISPM_EVAL_CHECK(mod2 || !overflow, args, panic, "integer overflow, args: ", args);
-  return res;
-}
-
-static Sym BAND(Sym a) { return binop(a, OP_AND, 0); }
-static Sym BOR(Sym a) { return binop(a, OP_OR, 0); }
-static Sym BXOR(Sym a) { return binop(a, OP_XOR, 0); }
-static Sym ADD(Sym a) { return binop(a, OP_ADD, 1); }
-static Sym SUB(Sym a) { return binop(a, OP_SUB, 1); }
-static Sym MUL(Sym a) { return binop(a, OP_MUL, 1); }
-
-static Sym BNOT(Sym args) {
-  Sym val;
-  LISPM_EVAL_CHECK(lispm_list_scan(&val, args, 1) == 1 && lispm_sym_is_shortnum(val), args, panic,
-                   "numeric value expected, got: ", args);
-  return lispm_shortnum_bitwise_not(val);
-}
-static Sym NEG(Sym args) {
-  Sym val;
-  LISPM_EVAL_CHECK(lispm_list_scan(&val, args, 1) == 1 && lispm_sym_is_shortnum(val), args, panic,
-                   "numeric value expected, got: ", args);
-  return lispm_shortnum_neg(val);
-}
-
 LISPM_BUILTINS_EXT(LRT0) = {
     {"program",     PROGRAM},
     {"import",      IMPORT },
@@ -209,12 +148,4 @@ LISPM_BUILTINS_EXT(LRT0) = {
     {"chars",       CHARS  },
     {"getc",        GETC   },
     {"copy",        COPY   },
-    {"+",           ADD    },
-    {"*",           MUL    },
-    {"-",           SUB    },
-    {"~",           NEG    },
-    {"bitwise-and", BAND   },
-    {"bitwise-or",  BOR    },
-    {"bitwise-xor", BXOR   },
-    {"bitwise-not", BNOT   },
 };

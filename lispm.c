@@ -13,13 +13,11 @@ static Sym sema_quote(Sym args);
 
 static const struct Builtin LISPM_CORE_BUILTINS[]
     __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
-        {"#t"},
         {"#err!"},
         {"quote", evquote, sema_quote},
 };
-#define BUILTIN_T     (LISPM_CORE_BUILTINS + 0)
-#define BUILTIN_ERR   (LISPM_CORE_BUILTINS + 1)
-#define BUILTIN_QUOTE (LISPM_CORE_BUILTINS + 2)
+#define BUILTIN_ERR   (LISPM_CORE_BUILTINS + 0)
+#define BUILTIN_QUOTE (LISPM_CORE_BUILTINS + 1)
 
 /* builtins */
 Sym lispm_sym_from_builtin(const struct Builtin *bi) {
@@ -525,30 +523,6 @@ Sym lispm_exec(void) {
   return M.stack[0];
 }
 
-static Sym LIST(Sym a) { return a; }
-static Sym CONS(Sym a) {
-  Sym xy[2];
-  LISPM_EVAL_CHECK(lispm_list_scan(xy, a, 2) == 2, a, panic, "two arguments expected, got: ", a);
-  return C(xy[0], xy[1]);
-}
-static Sym CONS_UNPACK(Sym a, unsigned offs) {
-  Sym arg;
-  LISPM_EVAL_CHECK(lispm_list_scan(&arg, a, 1) == 1 && lispm_sym_is_cons(arg), a, panic,
-                   "single cons-arguments expected, got: ", a);
-  return lispm_st_obj_unpack(arg)[offs];
-}
-static Sym CAR(Sym a) { return CONS_UNPACK(a, 0); }
-static Sym CDR(Sym a) { return CONS_UNPACK(a, 1); }
-static Sym ATOM(Sym a) {
-  Sym arg;
-  LISPM_EVAL_CHECK(lispm_list_scan(&arg, a, 1) == 1, a, panic, "single arguments expected, got: ", a);
-  return lispm_sym_is_atom(arg) ? lispm_sym_from_builtin(BUILTIN_T) : LISPM_SYM_NIL;
-}
-static Sym EQ(Sym a) {
-  Sym xy[2];
-  LISPM_EVAL_CHECK(lispm_list_scan(xy, a, 2) == 2, a, panic, "two arguments expected, got: ", a);
-  return lispm_sym_is_atom(xy[0]) && xy[0] == xy[1] ? lispm_sym_from_builtin(BUILTIN_T) : LISPM_SYM_NIL;
-}
 static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
 static const struct Builtin LISPM_SYN_BUILTINS[]
@@ -557,11 +531,5 @@ static const struct Builtin LISPM_SYN_BUILTINS[]
         {"lambda", evlambda, sema_lambda},
         {"let", evlet, sema_let},
         {"letrec", evletrec, sema_letrec},
-        {"atom?", ATOM},
-        {"eq?", EQ},
-        {"list", LIST},
-        {"cons", CONS},
-        {"car", CAR},
-        {"cdr", CDR},
         {"panic!", PANIC},
 };

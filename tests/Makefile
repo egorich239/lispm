@@ -1,5 +1,5 @@
 TESTS = $(wildcard test-*.c)
-LISPM_SRC = ../lispm.c ../lrt0.c ../rt-std.c ../debug.c ../lispm.ld
+LISPM_SRC = ../lispm.c ../lrt0.c ../lispm-funs.c ../rt-std.c ../debug.c ../lispm.ld
 CFLAGS = -Wall -Werror -fomit-frame-pointer -gdwarf-2 -g3 -mtune=generic \
 	-O0 -DLISPM_CONFIG_ASSERT=1 -DLISPM_CONFIG_VERBOSE=1 \
 	-I.. -Wl,-T../lispm.ld \

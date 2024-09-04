@@ -2,7 +2,7 @@
 
 set -e
 
-readonly FILES=(lispm.o lrt0.o)
+readonly FILES=(lispm.o lrt0.o lispm-funs.o)
 
 for f in ${FILES[@]} ; do
     echo $f
