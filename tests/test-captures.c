@@ -1,3 +1,4 @@
+#include "liblispm/rt.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -80,7 +81,6 @@ struct Lispm lispm = {
     /*strings*/
     .strings = strings,
     .strings_end = strings + sizeof(strings),
-    .tp = strings,
 
     /*program*/
     .program = _binary_captures_data_txt_start,
@@ -90,6 +90,9 @@ struct Lispm lispm = {
     /*htable*/
     .htable = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
+
+    /**/
+    .stack_depth_limit = 16384u,
 };
 
 #define M lispm
@@ -120,6 +123,7 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (*M.pc <= ' ') continue;
+    M.stack_bottom_mark = lispm_rt_stack_mark();
     next_lambda = lispm_parse_quote0(M.pc, M.program_end);
     LispmObj actual = lispm_exec();
     LispmObj expected = lispm_parse_quote0(M.pc, M.program_end);

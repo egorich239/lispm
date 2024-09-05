@@ -89,6 +89,9 @@ struct Lispm {
   /* Hash table storage. Must have a power-of-two size. */
   unsigned *htable, *htable_end;
 
+  /* Native call stack depth limit. */
+  int stack_depth_limit;
+
   /* VM state, initialized by lispm_init(). */
   /* Stack pointer. Grows down. */
   LispmObj *sp;
@@ -105,14 +108,22 @@ struct Lispm {
      the current lexical frame, used during semantic analysis. */
   LispmObj lex_frame;
   unsigned lex_frame_depth;
+
+  /* Marks the bottom of the native call stack at the beginning of lispm_exec() */
+  void *stack_bottom_mark;
 };
 
 /* Callbacks, triggered on various events in the VM. */
+enum LispmTraceStack {
+  LISPM_TRACE_STACK_NATIVE = 0,
+  LISPM_TRACE_STACK_OBJECTS = 1,
+};
 struct LispmTraceCallbacks {
   void (*apply_enter)(LispmObj fn, LispmObj fn_resolved, LispmObj args);
   void (*apply_leave)(void);
   void (*lambda_proto)(LispmObj lambda);
   void (*lambda_cons)(LispmObj lambda);
+  void (*stack_depth)(enum LispmTraceStack stack, int depth);
 
   void (*assertion)(const char *file, unsigned line, const char *msg);
   void (*panic)(const char *file, unsigned line, const char *msg, LispmObj ctx);

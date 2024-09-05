@@ -75,3 +75,10 @@ letrec-capture-self
     (letrec ((c c)) c)
 )
 #err!
+
+nonterminating
+(letrec
+    ((c (lambda () (c))))
+    (c)
+)
+#err!

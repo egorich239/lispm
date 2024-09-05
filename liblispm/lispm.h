@@ -19,7 +19,8 @@ static inline int lispm_is_valid_config(void) {
          && m->strings + 8 <= m->strings_end                 /**/
          && m->program <= m->pc && m->pc < m->program_end    /**/
          && m->htable + 1024 <= m->htable_end                /**/
-         && lispm_is_power_of_two(m->htable_end - m->htable)
+         && lispm_is_power_of_two(m->htable_end - m->htable) /**/
+         && m->stack_depth_limit >= 1024u                    /**/
          /* we also want all offsets to fit into short unsigned */
          && lispm_shortnum_can_represent(m->stack_end - m->stack)     /**/
          && lispm_shortnum_can_represent(m->strings_end - m->strings) /**/

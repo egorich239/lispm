@@ -39,6 +39,9 @@ struct Lispm lispm = {
     /*htable*/
     .htable = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
+
+    /**/
+    .stack_depth_limit = 16384u,
 };
 
 #define M lispm
@@ -75,7 +78,11 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "\nThe layout of the test file is probably broken; terminating\n");
       return 1;
     }
+    fprintf(stderr, "\n");
+    M.stack_bottom_mark = lispm_rt_stack_mark();
+    lispm_reset_runtime_stats();
     LispmObj actual = lispm_exec();
+    lispm_print_runtime_stats();
     LispmObj expected = lispm_parse_quote0(M.pc, M.program_end);
 
     lispm_print_short(testname);

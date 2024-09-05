@@ -1,11 +1,18 @@
 #include <liblispm/builtins.h>
 #include <liblispm/lispm.h>
 #include <liblispm/obj.h>
+#include <liblispm/rt.h>
 #include <liblispm/trace.h>
 #include <liblispm/types.h>
 
 /**/
 #include <liblispm/interal-macros.h>
+
+#define TRACE_NATIVE_STACK()                                                                                           \
+  do {                                                                                                                 \
+    LISPM_TRACE(stack_depth, LISPM_TRACE_STACK_NATIVE, lispm_rt_stack_depth(M.stack_bottom_mark));                     \
+    LISPM_EVAL_CHECK(lispm_rt_stack_depth(M.stack_bottom_mark) < M.stack_depth_limit, LISPM_SYM_NIL, oom_stack);       \
+  } while (0)
 
 extern struct LispmBuiltin lispm_builtins_start[];
 extern struct LispmBuiltin lispm_builtins_end[];
@@ -64,6 +71,7 @@ Obj *lispm_obj_unpack(Obj s) { return M.stack + lispm_st_obj_st_offs(s); }
 static Obj gc0(Obj s, unsigned high_mark, unsigned depth) {
   /* TODO: guarantee that gc0 over list (of atoms) is non-recursive */
   if (!lispm_obj_is_st_obj(s) || lispm_st_obj_st_offs(s) >= high_mark) return s;
+  TRACE_NATIVE_STACK();
   unsigned sz = lispm_st_obj_st_size(s);
   Obj res = lispm_obj_alloc0(lispm_st_obj_kind(s));
   Obj *t = M.sp, *f = lispm_obj_unpack(s) + sz;
@@ -75,6 +83,7 @@ static Obj gc(Obj root, unsigned high_mark) {
   unsigned low_mark = M.sp - M.stack;
   root = gc0(root, high_mark, high_mark - low_mark);
   const unsigned lowest_mark = M.sp - M.stack;
+  LISPM_TRACE(stack_depth, LISPM_TRACE_STACK_OBJECTS, M.stack_end - M.sp);
   while (lowest_mark < low_mark)
     M.stack[--high_mark] = M.stack[--low_mark];
   return root;
@@ -256,8 +265,9 @@ static Obj parse_frame_leave(void) {
 
 static Obj parse(Obj tok) {
   if (lispm_obj_is_atom(tok)) return tok;
-  if (tok == TOK_QUOTE) return C(M.stack_end[~BUILTIN_QUOTE_INDEX], C(parse(lex()), LISPM_SYM_NIL));
+  TRACE_NATIVE_STACK();
 
+  if (tok == TOK_QUOTE) return C(M.stack_end[~BUILTIN_QUOTE_INDEX], C(parse(lex()), LISPM_SYM_NIL));
   LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
   if ((tok = lex()) == TOK_RPAREN) return LISPM_SYM_NIL;
 
@@ -348,6 +358,8 @@ static Obj sema(Obj syn) {
     if (lispm_obj_is_literal(syn)) parse_frame_use(syn);
     return syn;
   }
+  TRACE_NATIVE_STACK();
+
   LISPM_ASSERT(lispm_obj_is_cons(syn));
   Obj form, args;
   C_UNPACK(syn, form, args);
@@ -443,6 +455,7 @@ static Obj eval(Obj syn) {
     LISPM_EVAL_CHECK(res != PARSE_SYM_UNBOUND, syn, unbound_symbol, syn);
     return res;
   }
+  TRACE_NATIVE_STACK();
   Obj form, args;
   C_UNPACK(syn, form, args);
 
@@ -456,11 +469,6 @@ static Obj eval(Obj syn) {
 Obj lispm_eval0(const char *pc, const char *pc_end) { return eval(sema(lispm_parse_quote0(pc, pc_end))); }
 static inline int lispm_is_valid_result(Obj e) {
   return lispm_obj_is_nil(e) || lispm_obj_is_atom(e) || lispm_obj_is_cons(e);
-}
-static void lispm_main(void) {
-  Obj r = lispm_eval0(M.pc, M.program_end);
-  LISPM_EVAL_CHECK(lispm_is_valid_result(r), r, panic, "invalid result of evaluation: ", r);
-  M.stack[0] = r;
 }
 
 void lispm_init(void) {
@@ -490,6 +498,13 @@ void lispm_init(void) {
     }
     M.stack_end[~i] = s;
   }
+}
+
+static void lispm_main(void) {
+  M.stack_bottom_mark = lispm_rt_stack_mark();
+  Obj r = lispm_eval0(M.pc, M.program_end);
+  LISPM_EVAL_CHECK(lispm_is_valid_result(r), r, panic, "invalid result of evaluation: ", r);
+  M.stack[0] = r;
 }
 
 Obj lispm_exec(void) {

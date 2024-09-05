@@ -1,9 +1,10 @@
-#include "liblispm/trace.h"
 #include <liblispm/debug.h>
 
 #include <liblispm/builtins.h>
 #include <liblispm/lispm.h>
 #include <liblispm/obj.h>
+#include <liblispm/trace.h>
+#include <liblispm/types.h>
 
 #include <stdio.h>
 
@@ -86,6 +87,10 @@ void lispm_print_short(Obj sym) {
 }
 
 #if LISPM_CONFIG_VERBOSE
+static int stack_depths[2];
+static void trace_stack_depth(enum LispmTraceStack stack, int depth) {
+  if (stack_depths[stack] < depth) stack_depths[stack] = depth;
+}
 static void trace_assertion(const char *file, unsigned line, const char *msg) {
   fprintf(stderr, "%s:%u: ASSERT: %s\n", file, line, msg);
 }
@@ -137,6 +142,7 @@ static void trace_apply_leave() { --stack_trace_depth; }
 void lispm_trace_full(void) {
 #if LISPM_CONFIG_VERBOSE
   lispm_trace.apply_enter = trace_full_apply_enter;
+  lispm_trace.stack_depth = trace_stack_depth;
   lispm_trace.panic = trace_panic;
   lispm_trace.assertion = trace_assertion;
   lispm_trace.illegal_bind = trace_illegal_bind;
@@ -148,6 +154,7 @@ void lispm_trace_stack(void) {
 #if LISPM_CONFIG_VERBOSE
   lispm_trace.apply_enter = trace_apply_enter;
   lispm_trace.apply_leave = trace_apply_leave;
+  lispm_trace.stack_depth = trace_stack_depth;
   lispm_trace.panic = trace_panic;
   lispm_trace.assertion = trace_assertion;
   lispm_trace.illegal_bind = trace_illegal_bind;
@@ -165,6 +172,19 @@ void lispm_print_stack_trace(void) {
   while (stack_trace_depth) {
     print_call_frame(stack_trace[--stack_trace_depth]);
   }
+#endif
+}
+
+void lispm_reset_runtime_stats(void) {
+#if LISPM_CONFIG_VERBOSE
+  stack_depths[0] = stack_depths[1] = 0;
+#endif
+}
+void lispm_print_runtime_stats(void) {
+#if LISPM_CONFIG_VERBOSE
+  fprintf(stderr, "=== Runtime statistics ===\n");
+  fprintf(stderr, "  native stack depth (max): %i\n", stack_depths[LISPM_TRACE_STACK_NATIVE]);
+  fprintf(stderr, "  object stack depth (max): %i\n", stack_depths[LISPM_TRACE_STACK_OBJECTS]);
 #endif
 }
 

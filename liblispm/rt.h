@@ -12,5 +12,8 @@ extern void lispm_rt_try(void (*fn)(void));
    Guaranteed to be called only from within `lispm_rt_try` function. */
 extern __attribute__((noreturn)) void lispm_rt_throw(void);
 
+extern void *lispm_rt_stack_mark(void);
+extern int lispm_rt_stack_depth(void *mark);
+
 /* Machine must be initialized before calling lispm_exec(). */
 extern struct Lispm lispm;
