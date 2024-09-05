@@ -12,10 +12,10 @@
     Sym li_ = (c);                                                                                                     \
     LISPM_ASSERT(lispm_sym_is_cons(li_));                                                                              \
     Sym *cons_ = lispm_st_obj_unpack(li_);                                                                             \
-    car = cons_[0], cdr = cons_[1];                                                                                    \
+    car = cons_[1], cdr = cons_[0];                                                                                    \
   }
-#define C_CAR(c) lispm_st_obj_unpack(c)[0]
-#define C_CDR(c) lispm_st_obj_unpack(c)[1]
+#define C_CAR(c) lispm_st_obj_unpack(c)[1]
+#define C_CDR(c) lispm_st_obj_unpack(c)[0]
 #define C_ENSURE(seq, msg)                                                                                             \
   {                                                                                                                    \
     Sym v_ = (seq);                                                                                                    \
@@ -28,16 +28,16 @@
     Sym li_ = (t);                                                                                                     \
     LISPM_ASSERT(lispm_sym_is_triplet(li_));                                                                           \
     Sym *cons_ = lispm_st_obj_unpack(li_);                                                                             \
-    a = cons_[0], b = cons_[1], n = cons_[2];                                                                          \
+    n = cons_[0], a = cons_[1], b = cons_[2];                                                                          \
   }
 
 #define FOR_EACH_C(arg, seq)                                                                                           \
   for (Sym * cons_, it_ = (seq), arg;                                                                                  \
-       !lispm_sym_is_nil(it_) && (cons_ = lispm_st_obj_unpack(it_), arg = cons_[0], it_ = cons_[1], 1);)
+       !lispm_sym_is_nil(it_) && (cons_ = lispm_st_obj_unpack(it_), it_ = cons_[0], arg = cons_[1], 1);)
 
 #define FOR_EACH_T(a, b, seq)                                                                                          \
   for (Sym * cons_, it_ = (seq), a, b;                                                                                 \
-       !lispm_sym_is_nil(it_) && (cons_ = lispm_st_obj_unpack(it_), a = cons_[0], b = cons_[1], it_ = cons_[2], 1);)
+       !lispm_sym_is_nil(it_) && (cons_ = lispm_st_obj_unpack(it_), it_ = cons_[0], a = cons_[1], b = cons_[2], 1);)
 
 extern struct Builtin lispm_builtins_start[];
 extern struct Builtin lispm_builtins_end[];
@@ -71,13 +71,13 @@ unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit) {
   return lispm_sym_is_nil(it) ? cntr : ~0u;
 }
 
-static Sym list_reverse_inplace(Sym li, int next_offs) {
+static Sym list_reverse_inplace(Sym li) {
   /* not a public interface because it actually changes the object state */
   LISPM_ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_cons(li) || lispm_sym_is_triplet(li));
   Sym cur = li, prev = LISPM_SYM_NIL, next, *cons;
   while (!lispm_sym_is_nil(cur)) {
-    cons = lispm_st_obj_unpack(cur), next = cons[next_offs];
-    cons[next_offs] = prev, prev = cur, cur = next;
+    cons = lispm_st_obj_unpack(cur), next = cons[0];
+    cons[0] = prev, prev = cur, cur = next;
   }
   return prev;
 }
@@ -297,7 +297,7 @@ static Sym parse(Sym tok) {
   Sym res = C(parse(tok), LISPM_SYM_NIL);
   while ((tok = lex()) != TOK_RPAREN)
     res = C(parse(tok), res);
-  return list_reverse_inplace(res, 1);
+  return list_reverse_inplace(res);
 }
 static Sym sema(Sym syn);
 
@@ -314,7 +314,7 @@ static Sym sema_con(Sym brans) {
                      "conditional branch must have form (condition action), got: ", bran);
     res = T(sema(conact[0]), sema(conact[1]), res);
   }
-  return list_reverse_inplace(res, 2);
+  return list_reverse_inplace(res);
 }
 static Sym sema_lambda(Sym def) {
   Sym argsbody[2];
@@ -343,7 +343,7 @@ static Sym sema_let(Sym def) {
   }
   expr = sema(asgnsexpr[1]);
   FOR_EACH_T(ign1, ign2, asgns) { parse_frame_leave(), ((void)ign1), ((void)ign2); }
-  return C(list_reverse_inplace(asgns, 2), expr);
+  return C(list_reverse_inplace(asgns), expr);
 }
 static Sym sema_letrec(Sym def) {
   Sym asgnsexpr[2], args = LISPM_SYM_NIL, bodies = LISPM_SYM_NIL, exprs = LISPM_SYM_NIL, nameval[2];
@@ -360,7 +360,7 @@ static Sym sema_letrec(Sym def) {
   }
   FOR_EACH_C(body, bodies) { exprs = C(sema(body), exprs); }
   Sym expr = sema(asgnsexpr[1]), captures = parse_frame_leave();
-  return C(T(captures, list_reverse_inplace(args, 1), expr), exprs);
+  return C(T(captures, list_reverse_inplace(args), expr), exprs);
 }
 Sym lispm_parse_quote(const char *pc, const char *pc_end) {
   LISPM_ASSERT(M.program <= pc && pc <= pc_end && pc_end <= M.program_end);
@@ -387,7 +387,7 @@ static Sym sema(Sym syn) {
                    "function expected, got: ", form);
   Sym res = C(sema(form), LISPM_SYM_NIL);
   FOR_EACH_C(arg, args) { res = C(sema(arg), res); }
-  return list_reverse_inplace(res, 1);
+  return list_reverse_inplace(res);
 }
 
 /* eval */
@@ -420,7 +420,7 @@ static Sym evlet(Sym let) {
 static Sym evlis(Sym li) {
   Sym res = LISPM_SYM_NIL;
   FOR_EACH_C(expr, li) { res = C(eval(expr), res); }
-  return list_reverse_inplace(res, 1);
+  return list_reverse_inplace(res);
 }
 static Sym evapply_lambda(Sym fn, Sym args) {
   LISPM_ASSERT(lispm_sym_is_triplet(fn));

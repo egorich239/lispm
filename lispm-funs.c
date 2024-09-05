@@ -21,8 +21,8 @@ static Sym CONS_UNPACK(Sym a, unsigned offs) {
                    "single cons-arguments expected, got: ", a);
   return lispm_st_obj_unpack(arg)[offs];
 }
-static Sym CAR(Sym a) { return CONS_UNPACK(a, 0); }
-static Sym CDR(Sym a) { return CONS_UNPACK(a, 1); }
+static Sym CAR(Sym a) { return CONS_UNPACK(a, 1); }
+static Sym CDR(Sym a) { return CONS_UNPACK(a, 0); }
 static Sym ATOM(Sym a) {
   Sym arg;
   LISPM_EVAL_CHECK(lispm_list_scan(&arg, a, 1) == 1, a, panic, "single arguments expected, got: ", a);

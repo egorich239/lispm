@@ -56,12 +56,12 @@ Sym *lispm_st_obj_unpack(Sym s);
 
 static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
   Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_CONS);
-  lispm.sp[0] = car, lispm.sp[1] = cdr;
+  lispm.sp[0] = cdr, lispm.sp[1] = car;
   return res;
 }
 static inline Sym lispm_triplet_alloc(Sym a, Sym b, Sym n) {
   Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_TRIPLET);
-  lispm.sp[0] = a, lispm.sp[1] = b, lispm.sp[2] = n;
+  lispm.sp[0] = n, lispm.sp[1] = a, lispm.sp[2] = b;
   return res;
 }
 

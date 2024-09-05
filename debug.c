@@ -50,7 +50,7 @@ void lispm_print_short(Sym sym) {
     fprintf(stderr, "(");
     while (lispm_sym_is_cons(sym)) {
       Sym *cons = lispm_st_obj_unpack(sym);
-      sym = cons[1];
+      sym = cons[0];
       if (counter < 0) continue;
       if (counter == 0) {
         fprintf(stderr, " ...");
@@ -58,7 +58,7 @@ void lispm_print_short(Sym sym) {
         continue;
       }
       if (counter-- < COUNTER_INIT_VALUE) { fprintf(stderr, " "); }
-      lispm_print_short(cons[0]);
+      lispm_print_short(cons[1]);
     }
     if (!lispm_sym_is_nil(sym) && counter >= 0) {
       fprintf(stderr, " ");
@@ -177,8 +177,8 @@ void lispm_dump(Sym sym) {
     indent += 2;
     same_line = 1;
     while (lispm_sym_is_cons(sym)) {
-      Sym car = stack[lispm_st_obj_st_offs(sym)];
-      sym = stack[lispm_st_obj_st_offs(sym) + 1];
+      Sym car = stack[lispm_st_obj_st_offs(sym) + 1];
+      sym = stack[lispm_st_obj_st_offs(sym) + 0];
       lispm_dump(car);
     }
     if (sym != LISPM_SYM_NIL) lispm_dump(sym);
