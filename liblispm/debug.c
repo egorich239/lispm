@@ -1,15 +1,23 @@
-#include "debug.h"
-#include "lispm.h"
-#include "lrt0.h"
+#include "liblispm/trace.h"
+#include <liblispm/debug.h>
+
+#include <liblispm/builtins.h>
+#include <liblispm/lispm.h>
+#include <liblispm/obj.h>
 
 #include <stdio.h>
+
+/**/
+#include <liblispm/interal-macros.h>
+
+extern const struct LispmBuiltin lispm_builtins_start[];
 
 #if LISPM_CONFIG_VERBOSE
 struct LispmTraceCallbacks lispm_trace = {};
 struct CallFrame {
-  Sym fn;
-  Sym resolved;
-  Sym args;
+  Obj fn;
+  Obj resolved;
+  Obj args;
 };
 
 enum { STACK_TRACE_DEPTH = 32 };
@@ -17,87 +25,81 @@ static struct CallFrame stack_trace[STACK_TRACE_DEPTH];
 static unsigned stack_trace_depth;
 #endif
 
-static const char *literal_name(Sym l) { return lispm.strings + lispm_literal_str_offs(l); }
+static const char *literal_name(Obj l) {
+  LISPM_ASSERT(lispm_obj_is_literal(l));
+  return lispm.strings + (lispm.htable[lispm_literal_ht_offs(l)] >> 2);
+}
 
-void lispm_print_short(Sym sym) {
-  if (lispm_sym_is_nil(sym)) {
+void lispm_print_short(Obj sym) {
+  if (lispm_obj_is_nil(sym)) {
     fprintf(stderr, "()");
     return;
   }
-  if (lispm_sym_is_literal(sym)) {
+  if (lispm_obj_is_literal(sym)) {
     fprintf(stderr, "%s", literal_name(sym));
     return;
   }
-  if (lispm_sym_is_shortnum(sym)) {
+  if (lispm_obj_is_shortnum(sym)) {
     fprintf(stderr, "%u", lispm_shortnum_val(sym));
     return;
   }
-  if (lispm_sym_is_builtin_sym(sym)) {
-    fprintf(stderr, "<builtin %s>", lispm.builtins[lispm_builtin_sym_offs(sym)].name);
+  if (lispm_obj_is_builtin_sym(sym)) {
+    fprintf(stderr, "<builtin %s>", lispm_builtins_start[lispm_builtin_sym_offs(sym)].name);
     return;
   }
-  if (lispm_sym_is_special(sym)) {
+  if (lispm_obj_is_special(sym)) {
     fprintf(stderr, "<special %x>", sym);
     return;
   }
-  if (lispm_sym_is_lambda(sym)) {
-    Sym *cab = lispm_st_obj_unpack(sym);
-    fprintf(stderr, "(lambda ");
-    lispm_print_short(cab[1]);
-    fprintf(stderr, " ");
-    lispm_print_short(cab[2]);
-    fprintf(stderr, ")");
-    return;
-  }
-  if (lispm_sym_is_span(sym)) {
-    fprintf(stderr, "(span ");
-    Sym *pol = lispm_st_obj_unpack(sym);
-    lispm_print_short(pol[0]);
-    fprintf(stderr, " ");
-    lispm_print_short(pol[1]);
-    fprintf(stderr, " ");
-    lispm_print_short(pol[2]);
-    fprintf(stderr, ")");
-    return;
-  }
-  LISPM_ASSERT(lispm_sym_is_cons(sym));
-  enum { COUNTER_INIT_VALUE = 7 };
-  int counter = COUNTER_INIT_VALUE;
-  fprintf(stderr, "(");
-  while (lispm_sym_is_cons(sym)) {
-    Sym *cons = lispm_st_obj_unpack(sym);
-    sym = cons[1];
-    if (counter < 0) continue;
-    if (counter == 0) {
-      fprintf(stderr, " ...");
-      --counter;
-      continue;
+  if (lispm_obj_is_cons(sym)) {
+    enum { COUNTER_INIT_VALUE = 7 };
+    int counter = COUNTER_INIT_VALUE;
+    fprintf(stderr, "(");
+    while (lispm_obj_is_cons(sym)) {
+      Obj *cons = lispm_obj_unpack(sym);
+      sym = cons[0];
+      if (counter < 0) continue;
+      if (counter == 0) {
+        fprintf(stderr, " ...");
+        --counter;
+        continue;
+      }
+      if (counter-- < COUNTER_INIT_VALUE) { fprintf(stderr, " "); }
+      lispm_print_short(cons[1]);
     }
-    if (counter-- < COUNTER_INIT_VALUE) { fprintf(stderr, " "); }
-    lispm_print_short(cons[0]);
+    if (!lispm_obj_is_nil(sym) && counter >= 0) {
+      fprintf(stderr, " ");
+      lispm_print_short(sym);
+    }
+    fprintf(stderr, lispm_obj_is_nil(sym) ? ")" : "]");
   }
-  if (!lispm_sym_is_nil(sym) && counter >= 0) {
-    fprintf(stderr, " ");
-    lispm_print_short(sym);
+  if (lispm_obj_is_st_obj(sym)) {
+    Obj *cab = lispm_obj_unpack(sym);
+    fprintf(stderr, "[");
+    for (int i = 0; i < lispm_st_obj_st_size(sym); ++i) {
+      if (i) fprintf(stderr, " ");
+      lispm_print_short(cab[i]);
+    }
+    fprintf(stderr, "]");
+    return;
   }
-  fprintf(stderr, lispm_sym_is_nil(sym) ? ")" : "]");
 }
 
 #if LISPM_CONFIG_VERBOSE
 static void trace_assertion(const char *file, unsigned line, const char *msg) {
   fprintf(stderr, "%s:%u: ASSERT: %s\n", file, line, msg);
 }
-static void trace_panic(const char *file, unsigned line, const char *msg, Sym ctx) {
+static void trace_panic(const char *file, unsigned line, const char *msg, Obj ctx) {
   fprintf(stderr, "%s:%u: %s", file, line, msg);
   lispm_print_short(ctx);
   fprintf(stderr, "\n");
 }
-static void trace_illegal_bind(const char *file, unsigned line, Sym sym) {
+static void trace_illegal_bind(const char *file, unsigned line, Obj sym) {
   fprintf(stderr, "it is fobidden to bind to: ");
   lispm_print_short(sym);
   fprintf(stderr, "\n");
 }
-static void trace_unbound_symbol(const char *file, unsigned line, Sym sym) {
+static void trace_unbound_symbol(const char *file, unsigned line, Obj sym) {
   fprintf(stderr, "unbound symbol: ");
   lispm_print_short(sym);
   fprintf(stderr, "\n");
@@ -110,8 +112,8 @@ static void print_call_frame(struct CallFrame frame) {
   fprintf(stderr, ": ");
   lispm_print_short(frame.args);
   fprintf(stderr, "\n");
-  if (lispm_sym_is_lambda(frame.resolved)) {
-    Sym *cap = lispm_st_obj_unpack(frame.resolved);
+  if (lispm_obj_is_triplet(frame.resolved)) {
+    Obj *cap = lispm_obj_unpack(frame.resolved);
     fprintf(stderr, "    ");
     lispm_print_short(cap[0]);
     fprintf(stderr, "\n");
@@ -119,11 +121,11 @@ static void print_call_frame(struct CallFrame frame) {
   fprintf(stderr, "\n");
 }
 
-static void trace_full_apply_enter(Sym f, Sym resolved, Sym a) {
+static void trace_full_apply_enter(Obj f, Obj resolved, Obj a) {
   print_call_frame((struct CallFrame){.fn = f, .resolved = resolved, .args = a});
 }
 
-static void trace_apply_enter(Sym f, Sym resolved, Sym a) {
+static void trace_apply_enter(Obj f, Obj resolved, Obj a) {
   const unsigned target = stack_trace_depth < STACK_TRACE_DEPTH ? stack_trace_depth : STACK_TRACE_DEPTH - 1;
   stack_trace[target] = (struct CallFrame){.fn = f, .resolved = resolved, .args = a};
   ++stack_trace_depth;
@@ -166,7 +168,7 @@ void lispm_print_stack_trace(void) {
 #endif
 }
 
-void lispm_dump(Sym sym) {
+void lispm_dump(Obj sym) {
   static int indent = 0;
   static int same_line = 0;
 
@@ -177,13 +179,13 @@ void lispm_dump(Sym sym) {
       fprintf(stderr, " ");
   same_line = 0;
 
-  if (lispm_sym_is_cons(sym)) {
+  if (lispm_obj_is_cons(sym)) {
     fprintf(stderr, "(");
     indent += 2;
     same_line = 1;
-    while (lispm_sym_is_cons(sym)) {
-      Sym car = stack[lispm_st_obj_st_offs(sym)];
-      sym = stack[lispm_st_obj_st_offs(sym) + 1];
+    while (lispm_obj_is_cons(sym)) {
+      Obj car = stack[lispm_st_obj_st_offs(sym) + 1];
+      sym = stack[lispm_st_obj_st_offs(sym) + 0];
       lispm_dump(car);
     }
     if (sym != LISPM_SYM_NIL) lispm_dump(sym);
@@ -192,9 +194,9 @@ void lispm_dump(Sym sym) {
     for (int i = 0; i < indent; ++i)
       fprintf(stderr, " ");
     fprintf(stderr, sym != LISPM_SYM_NIL ? "]\n" : ")\n");
-  } else if (lispm_sym_is_lambda(sym)) {
+  } else if (lispm_obj_is_triplet(sym)) {
     unsigned offs = lispm_st_obj_st_offs(sym);
-    Sym cap = stack[offs], par = stack[offs + 1], body = stack[offs + 2];
+    Obj cap = stack[offs], par = stack[offs + 1], body = stack[offs + 2];
     fprintf(stderr, "(lambda\n");
     indent += 2;
     lispm_dump(par);

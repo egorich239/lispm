@@ -3,7 +3,8 @@ lexer char categories:
 - 00: literal symbol;
 - 01: digit;
 - 10: token symbol (currently only parens and quote);
-- 11: special symbols; those are either lex'd specially (e.g. semicolon), or are errors.
+- 11: special symbols; those are either lex'd specially (e.g. semicolon), or are
+errors.
 
 We utilize the following properties:
 1. if the higher bit is 0, then it is a valid atom symbol;

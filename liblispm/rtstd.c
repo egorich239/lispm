@@ -1,4 +1,5 @@
-#include "lispm.h"
+#include <liblispm/rt.h>
+
 #include <setjmp.h>
 #include <stddef.h>
 #include <stdlib.h>

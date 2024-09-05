@@ -5,33 +5,29 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-#include "debug.h"
-#include "lispm.h"
+#include <liblispm/debug.h>
+#include <liblispm/lispm.h>
 
-extern struct Builtin lispm_builtins[];
-
-Sym stack[4 * 1024 * 1024];
+LispmObj stack[4 * 1024 * 1024];
 char strings[16 * 1024 * 1024];
 unsigned htable[4 * 1024 * 1024];
 
 struct Lispm lispm = {
-    .builtins = lispm_builtins,
-
     /*stack*/
     .stack = stack,
-    .sp    = stack + (sizeof(stack) / sizeof(*stack)),
+    .stack_end = stack + (sizeof(stack) / sizeof(*stack)),
 
     /*strings*/
-    .strings     = strings,
+    .strings = strings,
     .strings_end = strings + sizeof(strings),
 
     /*program*/
-    .program     = 0,
+    .program = 0,
     .program_end = 0,
-    .pc          = 0,
+    .pc = 0,
 
     /*htable*/
-    .htable     = htable,
+    .htable = htable,
     .htable_end = htable + (sizeof(htable) / sizeof(*htable)),
 };
 
@@ -45,12 +41,12 @@ int main(int argc, char *argv[]) {
   void *page_begin = mmap(NULL, stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (!page_begin) return 1;
 
-  lispm.program     = page_begin;
+  lispm.program = page_begin;
   lispm.program_end = page_begin + stat.st_size;
-  lispm.pc          = lispm.program;
+  lispm.pc = lispm.program;
 
   lispm_trace_full();
   lispm_init();
-  Sym result = lispm_exec();
+  LispmObj result = lispm_exec();
   lispm_dump(result);
 }
