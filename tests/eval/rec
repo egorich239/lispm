@@ -68,3 +68,10 @@ letrec-corecursive
     (10 6 777)
     (2 6 6 999)
 )
+
+letrec-capture-self
+(let
+    ((c 3))
+    (letrec ((c c)) c)
+)
+#err!

@@ -30,6 +30,9 @@
     Sym *cons_ = lispm_st_obj_unpack(li_);                                                                             \
     n = cons_[0], a = cons_[1], b = cons_[2];                                                                          \
   }
+#define T_1(t)    lispm_st_obj_unpack(t)[1]
+#define T_2(t)    lispm_st_obj_unpack(t)[2]
+#define T_NEXT(t) lispm_st_obj_unpack(t)[0]
 
 #define FOR_EACH_C(arg, seq)                                                                                           \
   for (Sym * cons_, it_ = (seq), arg;                                                                                  \
@@ -118,9 +121,13 @@ enum { PARSE_SYM_UNBOUND = PARSE_SYM_BOUND(0, 0) };
 
 static inline unsigned htable_entry_key(Sym s) { return M.htable[lispm_literal_ht_offs(s)]; }
 static inline int htable_entry_key_payload(unsigned key) { return key >> 2; }
-static inline int htable_entry_is_assignable(Sym s) {
+static inline int htable_entry_is_lvalue(Sym s) {
   LISPM_ASSERT(lispm_sym_is_literal(s));
-  return (htable_entry_key(s) & 3) == 2;
+  return (htable_entry_key(s) & 2) == 2;
+}
+static inline int htable_entry_is_rvalue(Sym s) {
+  LISPM_ASSERT(lispm_sym_is_literal(s));
+  return (htable_entry_key(s) & 1) == 0;
 }
 static inline int htable_entry_key_streq(unsigned key, const char *b, const char *e) {
   const char *h = M.strings + htable_entry_key_payload(key);
@@ -133,7 +140,7 @@ static inline Sym htable_entry_get_assoc(Sym s) {
   return M.htable[lispm_literal_ht_offs(s) + 1];
 }
 static Sym htable_entry_set_assoc(Sym s, Sym assoc) {
-  LISPM_ASSERT(lispm_sym_is_literal(s) && htable_entry_is_assignable(s));
+  LISPM_ASSERT(lispm_sym_is_literal(s) && htable_entry_is_lvalue(s));
   Sym *a = M.htable + (lispm_literal_ht_offs(s) + 1), old_assoc = *a;
   return *a = assoc, old_assoc;
 }
@@ -167,22 +174,15 @@ static Sym htable_ensure(const char *b, const char *e, int is_lex) {
 ensure_insert:
   LISPM_EVAL_CHECK(M.tp + (e - b + 1) <= M.strings_end, LISPM_SYM_NIL, oom_strings);
   LISPM_EVAL_CHECK(*b != '#' || !is_lex, LISPM_SYM_NIL, lex_error);
-  unsigned assignable = *b == '#' || *b == ':' ? 0 : 2;
-  entry[0] = ((M.tp - M.strings) << 2) | assignable;
-  entry[1] = assignable ? PARSE_SYM_UNBOUND : lit;
+  unsigned lvalue = *b == '#' || *b == ':' ? 0 : 2;
+  entry[0] = ((M.tp - M.strings) << 2) | lvalue;
+  entry[1] = lvalue ? PARSE_SYM_UNBOUND : lit;
   while (b != e)
     *M.tp++ = *b++;
   *M.tp++ = 0;
   while ((M.tp - M.strings) & 3)
     M.tp++;
   return lit;
-}
-
-/* builtins support */
-static const struct Builtin *builtin(Sym lit) {
-  if (!lispm_sym_is_literal(lit)) return 0;
-  Sym val = htable_entry_get_assoc(lit);
-  return lispm_sym_is_builtin_sym(val) ? lispm_builtins_start + lispm_builtin_sym_offs(val) : 0;
 }
 
 /* lexer */
@@ -257,7 +257,7 @@ static void parse_frame_shadow_append(Sym lit, Sym old_assoc) {
 }
 static void parse_frame_bind(Sym lit, unsigned rec) {
   LISPM_ASSERT(lispm_sym_is_literal(lit));
-  if (!htable_entry_is_assignable(lit)) goto frame_bind_fail;
+  if (!htable_entry_is_lvalue(lit)) goto frame_bind_fail;
   Sym new_assoc = PARSE_SYM_BOUND(M.frame_depth, rec), old_assoc = htable_entry_set_assoc(lit, new_assoc);
   if (old_assoc == new_assoc) goto frame_bind_fail;
   return parse_frame_shadow_append(lit, old_assoc);
@@ -266,7 +266,7 @@ frame_bind_fail:
 }
 static void parse_frame_use(Sym lit) {
   LISPM_ASSERT(lispm_sym_is_literal(lit));
-  if (!htable_entry_is_assignable(lit)) return;
+  if (!htable_entry_is_lvalue(lit)) return;
   Sym old_assoc = htable_entry_get_assoc(lit);
   LISPM_EVAL_CHECK(old_assoc != PARSE_SYM_UNBOUND, lit, unbound_symbol, lit);
   if (old_assoc == PARSE_SYM_BOUND(M.frame_depth, 0) || old_assoc == PARSE_SYM_FREE(M.frame_depth) ||
@@ -386,8 +386,12 @@ static Sym sema(Sym syn) {
   Sym form, args;
   C_UNPACK(syn, form, args);
 
-  const struct Builtin *bi = builtin(form);
+  if (!lispm_sym_is_literal(form)) goto sema_ret_apply;
+  Sym assoc = htable_entry_get_assoc(form);
+  if (!lispm_sym_is_builtin_sym(assoc)) goto sema_ret_apply;
+  const struct Builtin *bi = lispm_builtins_start + lispm_builtin_sym_offs(assoc);
   if (bi && bi->sema) return C(form, bi->sema(args));
+sema_ret_apply:
   return C(M.stack_end[~BUILTIN_APPLY_INDEX], sema_apply(syn));
 }
 
@@ -442,9 +446,12 @@ static Sym evapply_lambda(Sym fn, Sym args) {
   return res;
 }
 static Sym evletrec(Sym arg) {
-  Sym lambda, args; /* TODO: it's actually fishy */
-  C_UNPACK(arg, lambda, args);
-  return evapply_lambda(lambda, evlis(args));
+  Sym lambda, exprs, shadow = LISPM_SYM_NIL;
+  C_UNPACK(arg, lambda, exprs);
+  FOR_EACH_C(name, T_2(lambda)) { shadow = htable_shadow_append(shadow, name, PARSE_SYM_UNBOUND); }
+  Sym res = evapply_lambda(lambda, evlis(exprs));
+  htable_shadow_rollback(shadow);
+  return res;
 }
 
 static Sym evapply(Sym expr) {
@@ -463,15 +470,15 @@ static Sym evapply(Sym expr) {
 static Sym eval(Sym syn) {
   if (lispm_sym_is_nil(syn) || lispm_sym_is_shortnum(syn)) return syn;
   if (lispm_sym_is_literal(syn)) {
-    const struct Builtin *bi = builtin(syn);
-    LISPM_EVAL_CHECK(!bi || !bi->sema, syn, panic, "special form cannot be used as a value, got: ", syn);
-    return htable_entry_get_assoc(syn);
+    LISPM_EVAL_CHECK(htable_entry_is_rvalue(syn), syn, panic, "cannot use symbol as a value: ", syn);
+    Sym res = htable_entry_get_assoc(syn);
+    LISPM_EVAL_CHECK(res != PARSE_SYM_UNBOUND, syn, unbound_symbol, syn);
+    return res;
   }
   Sym form, args;
   C_UNPACK(syn, form, args);
-  const struct Builtin *bi = builtin(form);
-  LISPM_ASSERT(bi);
 
+  const struct Builtin *bi = lispm_builtins_start + lispm_builtin_sym_offs(htable_entry_get_assoc(form));
   unsigned mark = M.sp - M.stack;
   Sym res = gc(bi->eval(args), mark);
   return res;
@@ -502,12 +509,14 @@ void lispm_init(void) {
   const unsigned bilen = lispm_builtins_end - lispm_builtins_start;
   lispm_st_obj_alloc0(bilen);
   for (int i = 0; i < bilen; ++i) {
-    const char *n = lispm_builtins_start[i].name;
+    const struct Builtin *bi = lispm_builtins_start + i;
+    const char *n = bi->name;
     if (!n) continue;
     Sym s = htable_ensure(n, n + __builtin_strlen(n), 0);
-    if (htable_entry_is_assignable(s)) {
+    if (htable_entry_is_lvalue(s)) {
       unsigned *entry = M.htable + lispm_literal_ht_offs(s);
-      entry[0] &= ~2u;
+      unsigned not_rvalue = bi->sema ? 1 : 0;
+      entry[0] = (entry[0] & ~2u) | not_rvalue;
       entry[1] = LISPM_MAKE_BUILTIN_SYM(i);
     }
     M.stack_end[~i] = s;
