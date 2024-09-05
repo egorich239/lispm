@@ -45,6 +45,7 @@ extern struct Builtin lispm_builtins_end[];
 static const struct Builtin CORE[];
 #define BUILTIN_ERR_INDEX   (0)
 #define BUILTIN_QUOTE_INDEX (1)
+#define BUILTIN_APPLY_INDEX (2)
 
 /* builtins */
 Sym lispm_sym_from_builtin(const struct Builtin *bi) {
@@ -299,8 +300,17 @@ static Sym parse(Sym tok) {
     res = C(parse(tok), res);
   return list_reverse_inplace(res);
 }
-static Sym sema(Sym syn);
+Sym lispm_parse_quote(const char *pc, const char *pc_end) {
+  LISPM_ASSERT(M.program <= pc && pc <= pc_end && pc_end <= M.program_end);
+  const char *old_pc_end = M.program_end;
+  M.pc = pc;
+  M.program_end = pc_end;
+  Sym res = parse(lex());
+  M.program_end = old_pc_end;
+  return res;
+}
 
+static Sym sema(Sym syn);
 static Sym sema_quote(Sym args) {
   Sym arg;
   LISPM_EVAL_CHECK(lispm_list_scan(&arg, args, 1) == 1, args, panic, "quote expects exactly one argument, got: ", args);
@@ -362,14 +372,10 @@ static Sym sema_letrec(Sym def) {
   Sym expr = sema(asgnsexpr[1]), captures = parse_frame_leave();
   return C(T(captures, list_reverse_inplace(args), expr), exprs);
 }
-Sym lispm_parse_quote(const char *pc, const char *pc_end) {
-  LISPM_ASSERT(M.program <= pc && pc <= pc_end && pc_end <= M.program_end);
-  const char *old_pc_end = M.program_end;
-  M.pc = pc;
-  M.program_end = pc_end;
-  Sym res = parse(lex());
-  M.program_end = old_pc_end;
-  return res;
+static Sym sema_apply(Sym syn) {
+  Sym res = LISPM_SYM_NIL;
+  FOR_EACH_C(arg, syn) { res = C(sema(arg), res); }
+  return list_reverse_inplace(res);
 }
 static Sym sema(Sym syn) {
   if (lispm_sym_is_atom(syn)) {
@@ -382,12 +388,7 @@ static Sym sema(Sym syn) {
 
   const struct Builtin *bi = builtin(form);
   if (bi && bi->sema) return C(form, bi->sema(args));
-
-  LISPM_EVAL_CHECK(lispm_sym_is_literal(form) || lispm_sym_is_cons(form), form, panic,
-                   "function expected, got: ", form);
-  Sym res = C(sema(form), LISPM_SYM_NIL);
-  FOR_EACH_C(arg, args) { res = C(sema(arg), res); }
-  return list_reverse_inplace(res);
+  return C(M.stack_end[~BUILTIN_APPLY_INDEX], sema_apply(syn));
 }
 
 /* eval */
@@ -447,18 +448,17 @@ static Sym evletrec(Sym arg) {
 }
 
 static Sym evapply(Sym expr) {
-  Sym f, args, fn = LISPM_SYM_NIL;
-  C_UNPACK(expr, f, args);
-  LISPM_ASSERT(lispm_sym_is_atom(f) || lispm_sym_is_cons(f));
+  Sym f, args;
+  C_UNPACK(evlis(expr), f, args);
 
-  const struct Builtin *bi = builtin(f);
-  LISPM_EVAL_CHECK(bi || lispm_sym_is_triplet(fn = eval(f)), f, panic, "a function expected, got: ", f);
+  const struct Builtin *bi = lispm_sym_is_builtin_sym(f) ? lispm_builtins_start + lispm_builtin_sym_offs(f) : 0;
+  LISPM_ASSERT(!bi || !bi->sema);
+  LISPM_EVAL_CHECK((bi && bi->eval) || lispm_sym_is_triplet(f), f, panic, "a function expected, got: ", f);
 
-  if (!bi || !bi->sema) args = evlis(args); /* not a special form, evaluate arguments */
-  LISPM_TRACE(apply_enter, f, fn, args);
-
-  if (bi) return bi->eval(args);
-  return evapply_lambda(fn, args);
+  LISPM_TRACE(apply_enter, f, f, args);
+  Sym res = bi ? bi->eval(args) : evapply_lambda(f, args);
+  LISPM_TRACE(apply_leave);
+  return res;
 }
 static Sym eval(Sym syn) {
   if (lispm_sym_is_nil(syn) || lispm_sym_is_shortnum(syn)) return syn;
@@ -467,9 +467,13 @@ static Sym eval(Sym syn) {
     LISPM_EVAL_CHECK(!bi || !bi->sema, syn, panic, "special form cannot be used as a value, got: ", syn);
     return htable_entry_get_assoc(syn);
   }
+  Sym form, args;
+  C_UNPACK(syn, form, args);
+  const struct Builtin *bi = builtin(form);
+  LISPM_ASSERT(bi);
+
   unsigned mark = M.sp - M.stack;
-  Sym res = gc(evapply(syn), mark);
-  LISPM_TRACE(apply_leave);
+  Sym res = gc(bi->eval(args), mark);
   return res;
 }
 
@@ -521,6 +525,7 @@ static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 static const struct Builtin CORE[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
     {"#err!"},
     {"quote", evquote, sema_quote},
+    {"(apply)", evapply, sema_apply},
     {"cond", evcon, sema_con},
     {"lambda", evlambda, sema_lambda},
     {"let", evlet, sema_let},
