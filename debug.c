@@ -1,5 +1,6 @@
 #include "debug.h"
 #include "lispm-builtins.h"
+#include "lispm-obj.h"
 #include "lispm.h"
 #include "lrt0.h"
 
@@ -43,36 +44,38 @@ void lispm_print_short(Sym sym) {
     fprintf(stderr, "<special %x>", sym);
     return;
   }
-  if (lispm_sym_is_triplet(sym)) {
+  if (lispm_sym_is_cons(sym)) {
+    enum { COUNTER_INIT_VALUE = 7 };
+    int counter = COUNTER_INIT_VALUE;
+    fprintf(stderr, "(");
+    while (lispm_sym_is_cons(sym)) {
+      Sym *cons = lispm_st_obj_unpack(sym);
+      sym = cons[1];
+      if (counter < 0) continue;
+      if (counter == 0) {
+        fprintf(stderr, " ...");
+        --counter;
+        continue;
+      }
+      if (counter-- < COUNTER_INIT_VALUE) { fprintf(stderr, " "); }
+      lispm_print_short(cons[0]);
+    }
+    if (!lispm_sym_is_nil(sym) && counter >= 0) {
+      fprintf(stderr, " ");
+      lispm_print_short(sym);
+    }
+    fprintf(stderr, lispm_sym_is_nil(sym) ? ")" : "]");
+  }
+  if (lispm_sym_is_st_obj(sym)) {
     Sym *cab = lispm_st_obj_unpack(sym);
-    fprintf(stderr, "(lambda ");
-    lispm_print_short(cab[1]);
-    fprintf(stderr, " ");
-    lispm_print_short(cab[2]);
-    fprintf(stderr, ")");
+    fprintf(stderr, "[");
+    for (int i = 0; i < lispm_st_obj_st_size(sym); ++i) {
+      if (i) fprintf(stderr, " ");
+      lispm_print_short(cab[i]);
+    }
+    fprintf(stderr, "]");
     return;
   }
-  LISPM_ASSERT(lispm_sym_is_cons(sym));
-  enum { COUNTER_INIT_VALUE = 7 };
-  int counter = COUNTER_INIT_VALUE;
-  fprintf(stderr, "(");
-  while (lispm_sym_is_cons(sym)) {
-    Sym *cons = lispm_st_obj_unpack(sym);
-    sym = cons[1];
-    if (counter < 0) continue;
-    if (counter == 0) {
-      fprintf(stderr, " ...");
-      --counter;
-      continue;
-    }
-    if (counter-- < COUNTER_INIT_VALUE) { fprintf(stderr, " "); }
-    lispm_print_short(cons[0]);
-  }
-  if (!lispm_sym_is_nil(sym) && counter >= 0) {
-    fprintf(stderr, " ");
-    lispm_print_short(sym);
-  }
-  fprintf(stderr, lispm_sym_is_nil(sym) ? ")" : "]");
 }
 
 #if LISPM_CONFIG_VERBOSE
