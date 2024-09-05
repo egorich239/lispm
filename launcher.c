@@ -8,7 +8,7 @@
 #include <liblispm/debug.h>
 #include <liblispm/lispm.h>
 
-Sym stack[4 * 1024 * 1024];
+LispmObj stack[4 * 1024 * 1024];
 char strings[16 * 1024 * 1024];
 unsigned htable[4 * 1024 * 1024];
 
@@ -47,6 +47,6 @@ int main(int argc, char *argv[]) {
 
   lispm_trace_full();
   lispm_init();
-  Sym result = lispm_exec();
+  LispmObj result = lispm_exec();
   lispm_dump(result);
 }

@@ -4,60 +4,25 @@
 #include <liblispm/trace.h>
 #include <liblispm/types.h>
 
-#define M lispm
+/**/
+#include <liblispm/interal-macros.h>
 
-#define C lispm_cons_alloc
-#define C_UNPACK(c, car, cdr)                                                                                          \
-  {                                                                                                                    \
-    Sym li_ = (c);                                                                                                     \
-    LISPM_ASSERT(lispm_sym_is_cons(li_));                                                                              \
-    Sym *cons_ = lispm_st_obj_unpack(li_);                                                                             \
-    car = cons_[1], cdr = cons_[0];                                                                                    \
-  }
-#define C_CAR(c) lispm_st_obj_unpack(c)[1]
-#define C_CDR(c) lispm_st_obj_unpack(c)[0]
-#define C_ENSURE(seq, msg)                                                                                             \
-  {                                                                                                                    \
-    Sym v_ = (seq);                                                                                                    \
-    LISPM_EVAL_CHECK(lispm_sym_is_nil(v_) || lispm_sym_is_cons(v_), v_, panic, msg ", got: ", v_);                     \
-  }
+extern struct LispmBuiltin lispm_builtins_start[];
+extern struct LispmBuiltin lispm_builtins_end[];
 
-#define T lispm_triplet_alloc
-#define T_UNPACK(t, a, b, n)                                                                                           \
-  {                                                                                                                    \
-    Sym li_ = (t);                                                                                                     \
-    LISPM_ASSERT(lispm_sym_is_triplet(li_));                                                                           \
-    Sym *cons_ = lispm_st_obj_unpack(li_);                                                                             \
-    n = cons_[0], a = cons_[1], b = cons_[2];                                                                          \
-  }
-#define T_1(t)    lispm_st_obj_unpack(t)[1]
-#define T_2(t)    lispm_st_obj_unpack(t)[2]
-#define T_NEXT(t) lispm_st_obj_unpack(t)[0]
-
-#define FOR_EACH_C(arg, seq)                                                                                           \
-  for (Sym * cons_, it_ = (seq), arg;                                                                                  \
-       !lispm_sym_is_nil(it_) && (cons_ = lispm_st_obj_unpack(it_), it_ = cons_[0], arg = cons_[1], 1);)
-
-#define FOR_EACH_T(a, b, seq)                                                                                          \
-  for (Sym * cons_, it_ = (seq), a, b;                                                                                 \
-       !lispm_sym_is_nil(it_) && (cons_ = lispm_st_obj_unpack(it_), it_ = cons_[0], a = cons_[1], b = cons_[2], 1);)
-
-extern struct Builtin lispm_builtins_start[];
-extern struct Builtin lispm_builtins_end[];
-
-const struct Builtin CORE[];
+const struct LispmBuiltin CORE[];
 #define BUILTIN_ERR_INDEX   (0)
 #define BUILTIN_QUOTE_INDEX (1)
 #define BUILTIN_APPLY_INDEX (2)
 
 /* builtins */
-Sym lispm_sym_from_builtin(const struct Builtin *bi) {
+Obj lispm_obj_from_builtin(const struct LispmBuiltin *bi) {
   LISPM_ASSERT(lispm_builtins_start <= bi && bi < lispm_builtins_end);
   return M.stack_end[~(bi - lispm_builtins_start)];
 }
 
 /* error reporting */
-__attribute__((noreturn)) void lispm_panic(Sym ctx) {
+__attribute__((noreturn)) void lispm_panic0(Obj ctx) {
   LISPM_ASSERT(M.stack);
   M.stack[0] = M.stack_end[~BUILTIN_ERR_INDEX];
   M.stack[1] = ctx;
@@ -65,47 +30,48 @@ __attribute__((noreturn)) void lispm_panic(Sym ctx) {
 }
 
 /* list functions */
-unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit) {
-  Sym it = li, val;
+unsigned lispm_list_scan(Obj *out, Obj li, unsigned limit) {
+  Obj it = li, val;
   unsigned cntr = 0;
-  while (lispm_sym_is_cons(it) && cntr < limit) {
+  while (lispm_obj_is_cons(it) && cntr < limit) {
     C_UNPACK(it, val, it);
     out[cntr++] = val;
   }
-  return lispm_sym_is_nil(it) ? cntr : ~0u;
+  LISPM_ASSERT(lispm_obj_is_nil(it) || lispm_obj_is_cons(it));
+  return lispm_obj_is_nil(it) ? cntr : ~0u;
 }
 
-static Sym list_reverse_inplace(Sym li) {
+static Obj list_reverse_inplace(Obj li) {
   /* not a public interface because it actually changes the object state */
-  LISPM_ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_st_obj(li));
-  Sym cur = li, prev = LISPM_SYM_NIL, next, *cons;
-  while (!lispm_sym_is_nil(cur)) {
-    cons = lispm_st_obj_unpack(cur), next = cons[0];
+  LISPM_ASSERT(lispm_obj_is_nil(li) || lispm_obj_is_st_obj(li));
+  Obj cur = li, prev = LISPM_SYM_NIL, next, *cons;
+  while (!lispm_obj_is_nil(cur)) {
+    cons = lispm_obj_unpack(cur), next = cons[0];
     cons[0] = prev, prev = cur, cur = next;
   }
   return prev;
 }
 
 /* stack functions */
-static inline Sym *lispm_st_obj_alloc0(unsigned size) {
+static inline Obj *lispm_st_obj_alloc0(unsigned size) {
   LISPM_EVAL_CHECK(M.stack + LISPM_STACK_BOTTOM_OFFSET + size <= M.sp, LISPM_SYM_NIL, oom_stack);
   return M.sp -= size;
 }
-Sym lispm_st_obj_alloc(unsigned k) {
+Obj lispm_obj_alloc0(enum LispmStObjKind k) {
   return lispm_make_st_obj(k, lispm_st_obj_alloc0(lispm_st_obj_st_size(k)) - M.stack);
 }
-Sym *lispm_st_obj_unpack(Sym s) { return M.stack + lispm_st_obj_st_offs(s); }
-static Sym gc0(Sym s, unsigned high_mark, unsigned depth) {
+Obj *lispm_obj_unpack(Obj s) { return M.stack + lispm_st_obj_st_offs(s); }
+static Obj gc0(Obj s, unsigned high_mark, unsigned depth) {
   /* TODO: guarantee that gc0 over list (of atoms) is non-recursive */
-  if (!lispm_sym_is_st_obj(s) || lispm_st_obj_st_offs(s) >= high_mark) return s;
+  if (!lispm_obj_is_st_obj(s) || lispm_st_obj_st_offs(s) >= high_mark) return s;
   unsigned sz = lispm_st_obj_st_size(s);
-  Sym res = lispm_st_obj_alloc(lispm_st_obj_kind(s));
-  Sym *t = M.sp, *f = lispm_st_obj_unpack(s) + sz;
-  for (Sym *m = t + sz; m != t;)
+  Obj res = lispm_obj_alloc0(lispm_st_obj_kind(s));
+  Obj *t = M.sp, *f = lispm_obj_unpack(s) + sz;
+  for (Obj *m = t + sz; m != t;)
     *--m = gc0(*--f, high_mark, depth);
   return lispm_st_obj_offset_by(res, depth);
 }
-static Sym gc(Sym root, unsigned high_mark) {
+static Obj gc(Obj root, unsigned high_mark) {
   unsigned low_mark = M.sp - M.stack;
   root = gc0(root, high_mark, high_mark - low_mark);
   const unsigned lowest_mark = M.sp - M.stack;
@@ -119,14 +85,14 @@ static Sym gc(Sym root, unsigned high_mark) {
 #define PARSE_SYM_BOUND(depth, rec) (((depth) << 4) | 11u | ((rec & 1u) << 2))
 enum { PARSE_SYM_UNBOUND = PARSE_SYM_BOUND(0, 0) };
 
-static inline unsigned htable_entry_key(Sym s) { return M.htable[lispm_literal_ht_offs(s)]; }
+static inline unsigned htable_entry_key(Obj s) { return M.htable[lispm_literal_ht_offs(s)]; }
 static inline int htable_entry_key_payload(unsigned key) { return key >> 2; }
-static inline int htable_entry_is_lvalue(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_literal(s));
+static inline int htable_entry_is_lvalue(Obj s) {
+  LISPM_ASSERT(lispm_obj_is_literal(s));
   return (htable_entry_key(s) & 2) == 2;
 }
-static inline int htable_entry_is_rvalue(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_literal(s));
+static inline int htable_entry_is_rvalue(Obj s) {
+  LISPM_ASSERT(lispm_obj_is_literal(s));
   return (htable_entry_key(s) & 1) == 0;
 }
 static inline int htable_entry_key_streq(unsigned key, const char *b, const char *e) {
@@ -135,19 +101,19 @@ static inline int htable_entry_key_streq(unsigned key, const char *b, const char
     if (*b++ != *h++) return 0;
   return !*h;
 }
-static inline Sym htable_entry_get_assoc(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_literal(s));
+static inline Obj htable_entry_get_assoc(Obj s) {
+  LISPM_ASSERT(lispm_obj_is_literal(s));
   return M.htable[lispm_literal_ht_offs(s) + 1];
 }
-static Sym htable_entry_set_assoc(Sym s, Sym assoc) {
-  LISPM_ASSERT(lispm_sym_is_literal(s) && htable_entry_is_lvalue(s));
-  Sym *a = M.htable + (lispm_literal_ht_offs(s) + 1), old_assoc = *a;
+static Obj htable_entry_set_assoc(Obj s, Obj assoc) {
+  LISPM_ASSERT(lispm_obj_is_literal(s) && htable_entry_is_lvalue(s));
+  Obj *a = M.htable + (lispm_literal_ht_offs(s) + 1), old_assoc = *a;
   return *a = assoc, old_assoc;
 }
-static Sym htable_shadow_append(Sym shadow, Sym lit, Sym assoc) {
+static Obj htable_shadow_append(Obj shadow, Obj lit, Obj assoc) {
   return T(lit, htable_entry_set_assoc(lit, assoc), shadow);
 }
-static void htable_shadow_rollback(Sym shadow) {
+static void htable_shadow_rollback(Obj shadow) {
   FOR_EACH_T(name, val, shadow) { M.htable[lispm_literal_ht_offs(name) + 1] = val; }
 }
 static unsigned htable_hashf(const char *b, const char *e, unsigned seed) {
@@ -159,9 +125,9 @@ static unsigned htable_hashf(const char *b, const char *e, unsigned seed) {
   LISPM_ASSERT(hash < M.htable_index_size);
   return hash;
 }
-static Sym htable_ensure(const char *b, const char *e, int is_lex) {
+static Obj htable_ensure(const char *b, const char *e, int is_lex) {
   unsigned offset = 5381, *entry;
-  Sym lit;
+  Obj lit;
   for (int attempt = 0; attempt < LISPM_CONFIG_HTABLE_LOOKUP_LIMIT; ++attempt) {
     offset = htable_hashf(b, e, offset);
     entry = M.htable + (2 * offset);
@@ -193,7 +159,7 @@ ensure_insert:
 #define TOK_RPAREN TOK_SYM(')')
 #define TOK_QUOTE  TOK_SYM('\'')
 
-static Sym lex(void) {
+static Obj lex(void) {
   enum { S_ATOM, S_NUM, S_COMMENT, S_INIT } state = S_INIT;
   _Static_assert(LEX_IS_ATOM_SYM(S_ATOM), "S_ATOM must match the category");
   _Static_assert(LEX_IS_DIGIT(S_NUM), "S_NUM must match the category");
@@ -248,39 +214,39 @@ lex_num:
 }
 /* parser */
 static void parse_frame_enter(void) {
-  ++M.frame_depth;
-  M.parse_frame = C(LISPM_SYM_NIL, M.parse_frame);
+  ++M.lex_frame_depth;
+  M.lex_frame = C(LISPM_SYM_NIL, M.lex_frame);
 }
-static void parse_frame_shadow_append(Sym lit, Sym old_assoc) {
-  Sym old_shadow = C_CAR(M.parse_frame);
-  C_CAR(M.parse_frame) = T(lit, old_assoc, old_shadow);
+static void parse_frame_shadow_append(Obj lit, Obj old_assoc) {
+  Obj old_shadow = C_CAR(M.lex_frame);
+  C_CAR(M.lex_frame) = T(lit, old_assoc, old_shadow);
 }
-static void parse_frame_bind(Sym lit, unsigned rec) {
-  LISPM_ASSERT(lispm_sym_is_literal(lit));
+static void parse_frame_bind(Obj lit, unsigned rec) {
+  LISPM_ASSERT(lispm_obj_is_literal(lit));
   if (!htable_entry_is_lvalue(lit)) goto frame_bind_fail;
-  Sym new_assoc = PARSE_SYM_BOUND(M.frame_depth, rec), old_assoc = htable_entry_set_assoc(lit, new_assoc);
+  Obj new_assoc = PARSE_SYM_BOUND(M.lex_frame_depth, rec), old_assoc = htable_entry_set_assoc(lit, new_assoc);
   if (old_assoc == new_assoc) goto frame_bind_fail;
   return parse_frame_shadow_append(lit, old_assoc);
 frame_bind_fail:
   LISPM_EVAL_CHECK(0, lit, illegal_bind, lit);
 }
-static void parse_frame_use(Sym lit) {
-  LISPM_ASSERT(lispm_sym_is_literal(lit));
+static void parse_frame_use(Obj lit) {
+  LISPM_ASSERT(lispm_obj_is_literal(lit));
   if (!htable_entry_is_lvalue(lit)) return;
-  Sym old_assoc = htable_entry_get_assoc(lit);
+  Obj old_assoc = htable_entry_get_assoc(lit);
   LISPM_EVAL_CHECK(old_assoc != PARSE_SYM_UNBOUND, lit, unbound_symbol, lit);
-  if (old_assoc == PARSE_SYM_BOUND(M.frame_depth, 0) || old_assoc == PARSE_SYM_FREE(M.frame_depth) ||
+  if (old_assoc == PARSE_SYM_BOUND(M.lex_frame_depth, 0) || old_assoc == PARSE_SYM_FREE(M.lex_frame_depth) ||
       (old_assoc & 15u) == 15u)
     return;
-  parse_frame_shadow_append(lit, htable_entry_set_assoc(lit, PARSE_SYM_FREE(M.frame_depth)));
+  parse_frame_shadow_append(lit, htable_entry_set_assoc(lit, PARSE_SYM_FREE(M.lex_frame_depth)));
 }
-static Sym parse_frame_leave(void) {
-  Sym shadow, bound = PARSE_SYM_BOUND(M.frame_depth--, 0);
-  C_UNPACK(M.parse_frame, shadow, M.parse_frame);
+static Obj parse_frame_leave(void) {
+  Obj shadow, bound = PARSE_SYM_BOUND(M.lex_frame_depth--, 0);
+  C_UNPACK(M.lex_frame, shadow, M.lex_frame);
 
-  Sym captures = LISPM_SYM_NIL;
+  Obj captures = LISPM_SYM_NIL;
   FOR_EACH_T(var, old_assoc, shadow) {
-    Sym cur = htable_entry_set_assoc(var, old_assoc);
+    Obj cur = htable_entry_set_assoc(var, old_assoc);
     if (cur == bound || (cur & 15u) == 15u) continue;
     captures = C(var, captures);
     parse_frame_use(var);
@@ -288,36 +254,36 @@ static Sym parse_frame_leave(void) {
   return captures;
 }
 
-static Sym parse(Sym tok) {
-  if (lispm_sym_is_atom(tok)) return tok;
+static Obj parse(Obj tok) {
+  if (lispm_obj_is_atom(tok)) return tok;
   if (tok == TOK_QUOTE) return C(M.stack_end[~BUILTIN_QUOTE_INDEX], C(parse(lex()), LISPM_SYM_NIL));
 
   LISPM_EVAL_CHECK(tok == TOK_LPAREN, tok, parse_error, tok);
   if ((tok = lex()) == TOK_RPAREN) return LISPM_SYM_NIL;
 
-  Sym res = C(parse(tok), LISPM_SYM_NIL);
+  Obj res = C(parse(tok), LISPM_SYM_NIL);
   while ((tok = lex()) != TOK_RPAREN)
     res = C(parse(tok), res);
   return list_reverse_inplace(res);
 }
-Sym lispm_parse_quote(const char *pc, const char *pc_end) {
+Obj lispm_parse_quote0(const char *pc, const char *pc_end) {
   LISPM_ASSERT(M.program <= pc && pc <= pc_end && pc_end <= M.program_end);
   const char *old_pc_end = M.program_end;
   M.pc = pc;
   M.program_end = pc_end;
-  Sym res = parse(lex());
+  Obj res = parse(lex());
   M.program_end = old_pc_end;
   return res;
 }
 
-static Sym sema(Sym syn);
-static Sym sema_quote(Sym args) {
-  Sym arg;
+static Obj sema(Obj syn);
+static Obj sema_quote(Obj args) {
+  Obj arg;
   LISPM_EVAL_CHECK(lispm_list_scan(&arg, args, 1) == 1, args, panic, "quote expects exactly one argument, got: ", args);
   return arg;
 }
-static Sym sema_con(Sym brans) {
-  Sym res = LISPM_SYM_NIL, conact[2];
+static Obj sema_con(Obj brans) {
+  Obj res = LISPM_SYM_NIL, conact[2];
   C_ENSURE(brans, "list of conditional actions expected");
   FOR_EACH_C(bran, brans) {
     LISPM_EVAL_CHECK(lispm_list_scan(conact, bran, 2) == 2, bran, panic,
@@ -326,26 +292,26 @@ static Sym sema_con(Sym brans) {
   }
   return list_reverse_inplace(res);
 }
-static Sym sema_lambda(Sym def) {
-  Sym argsbody[2];
+static Obj sema_lambda(Obj def) {
+  Obj argsbody[2];
   LISPM_EVAL_CHECK(lispm_list_scan(argsbody, def, 2) == 2, def, panic,
                    "lambda must provide (lambda (args...) body), got: ", def);
   parse_frame_enter();
   C_ENSURE(argsbody[0], "list of formal arguments expected")
   FOR_EACH_C(arg, argsbody[0]) {
-    LISPM_EVAL_CHECK(lispm_sym_is_literal(arg), arg, parse_error, arg);
+    LISPM_EVAL_CHECK(lispm_obj_is_literal(arg), arg, parse_error, arg);
     parse_frame_bind(arg, 0);
   }
-  Sym body = sema(argsbody[1]), captures = parse_frame_leave();
+  Obj body = sema(argsbody[1]), captures = parse_frame_leave();
   return T(captures, argsbody[0], body);
 }
-static Sym sema_let(Sym def) {
-  Sym asgnsexpr[2], asgns = LISPM_SYM_NIL, expr, nameval[2];
+static Obj sema_let(Obj def) {
+  Obj asgnsexpr[2], asgns = LISPM_SYM_NIL, expr, nameval[2];
   LISPM_EVAL_CHECK(lispm_list_scan(asgnsexpr, def, 2) == 2, def, panic,
                    "let must define a list of assignments followed by expression, got: ", def);
   C_ENSURE(asgnsexpr[0], "list of assignments expected")
   FOR_EACH_C(asgn, asgnsexpr[0]) {
-    LISPM_EVAL_CHECK(lispm_list_scan(nameval, asgn, 2) == 2 && lispm_sym_is_literal(nameval[0]), asgn, panic,
+    LISPM_EVAL_CHECK(lispm_list_scan(nameval, asgn, 2) == 2 && lispm_obj_is_literal(nameval[0]), asgn, panic,
                      "assignment must have form (name expr), got: ", asgn);
     asgns = T(nameval[0], sema(nameval[1]), asgns);
     parse_frame_enter();
@@ -355,164 +321,167 @@ static Sym sema_let(Sym def) {
   FOR_EACH_T(ign1, ign2, asgns) { parse_frame_leave(), ((void)ign1), ((void)ign2); }
   return C(list_reverse_inplace(asgns), expr);
 }
-static Sym sema_letrec(Sym def) {
-  Sym asgnsexpr[2], args = LISPM_SYM_NIL, bodies = LISPM_SYM_NIL, exprs = LISPM_SYM_NIL, nameval[2];
+static Obj sema_letrec(Obj def) {
+  Obj asgnsexpr[2], args = LISPM_SYM_NIL, bodies = LISPM_SYM_NIL, exprs = LISPM_SYM_NIL, nameval[2];
   LISPM_EVAL_CHECK(lispm_list_scan(asgnsexpr, def, 2) == 2, def, panic,
                    "letrec must define a list of assignments followed by expression, got: ", def);
   parse_frame_enter();
   C_ENSURE(asgnsexpr[0], "list of assignments expected");
   FOR_EACH_C(asgn, asgnsexpr[0]) {
-    LISPM_EVAL_CHECK(lispm_list_scan(nameval, asgn, 2) == 2 && lispm_sym_is_literal(nameval[0]), asgn, panic,
+    LISPM_EVAL_CHECK(lispm_list_scan(nameval, asgn, 2) == 2 && lispm_obj_is_literal(nameval[0]), asgn, panic,
                      "assignment must have form (name expr), got: ", asgn);
     args = C(nameval[0], args);
     bodies = C(nameval[1], bodies);
     parse_frame_bind(nameval[0], 1);
   }
   FOR_EACH_C(body, bodies) { exprs = C(sema(body), exprs); }
-  Sym expr = sema(asgnsexpr[1]), captures = parse_frame_leave();
+  Obj expr = sema(asgnsexpr[1]), captures = parse_frame_leave();
   return C(T(captures, list_reverse_inplace(args), expr), exprs);
 }
-static Sym sema_apply(Sym syn) {
-  Sym res = LISPM_SYM_NIL;
+static Obj sema_apply(Obj syn) {
+  Obj res = LISPM_SYM_NIL;
   FOR_EACH_C(arg, syn) { res = C(sema(arg), res); }
   return list_reverse_inplace(res);
 }
-static Sym sema(Sym syn) {
-  if (lispm_sym_is_atom(syn)) {
-    if (lispm_sym_is_literal(syn)) parse_frame_use(syn);
+static Obj sema(Obj syn) {
+  if (lispm_obj_is_atom(syn)) {
+    if (lispm_obj_is_literal(syn)) parse_frame_use(syn);
     return syn;
   }
-  LISPM_ASSERT(lispm_sym_is_cons(syn));
-  Sym form, args;
+  LISPM_ASSERT(lispm_obj_is_cons(syn));
+  Obj form, args;
   C_UNPACK(syn, form, args);
 
-  if (!lispm_sym_is_literal(form)) goto sema_ret_apply;
-  Sym assoc = htable_entry_get_assoc(form);
-  if (!lispm_sym_is_builtin_sym(assoc)) goto sema_ret_apply;
-  const struct Builtin *bi = lispm_builtins_start + lispm_builtin_sym_offs(assoc);
+  if (!lispm_obj_is_literal(form)) goto sema_ret_apply;
+  Obj assoc = htable_entry_get_assoc(form);
+  if (!lispm_obj_is_builtin_sym(assoc)) goto sema_ret_apply;
+  const struct LispmBuiltin *bi = lispm_builtins_start + lispm_builtin_sym_offs(assoc);
   if (bi && bi->sema) return C(form, bi->sema(args));
 sema_ret_apply:
   return C(M.stack_end[~BUILTIN_APPLY_INDEX], sema_apply(syn));
 }
 
 /* eval */
-static Sym eval(Sym e);
-static Sym evquote(Sym arg) { return arg; }
-static Sym evlambda(Sym lambda) {
-  Sym names, args, body, captures = LISPM_SYM_NIL;
+static Obj eval(Obj e);
+static Obj evquote(Obj arg) { return arg; }
+static Obj evlambda(Obj lambda) {
+  Obj names, args, body, captures = LISPM_SYM_NIL;
   T_UNPACK(lambda, names, args, body);
   FOR_EACH_C(name, names) {
-    Sym assoc = htable_entry_get_assoc(name);
+    Obj assoc = htable_entry_get_assoc(name);
     LISPM_ASSERT(assoc != PARSE_SYM_UNBOUND);
     captures = T(name, assoc, captures);
   }
   return T(captures, args, body);
 }
-static Sym evcon(Sym brans) {
+static Obj evcon(Obj brans) {
   FOR_EACH_T(cond, act, brans) {
-    if (!lispm_sym_is_nil(eval(cond))) return eval(act);
+    if (!lispm_obj_is_nil(eval(cond))) return eval(act);
   }
   LISPM_EVAL_CHECK(0, LISPM_SYM_NIL, panic, "condition branches exhausted", LISPM_SYM_NIL);
 }
-static Sym evlet(Sym let) {
-  Sym asgns, expr, shadow = LISPM_SYM_NIL;
+static Obj evlet(Obj let) {
+  Obj asgns, expr, shadow = LISPM_SYM_NIL;
   C_UNPACK(let, asgns, expr);
   FOR_EACH_T(name, expr, asgns) { shadow = htable_shadow_append(shadow, name, eval(expr)); }
-  Sym res = eval(expr);
+  Obj res = eval(expr);
   htable_shadow_rollback(shadow);
   return res;
 }
-static Sym evlis(Sym li) {
-  Sym res = LISPM_SYM_NIL;
+static Obj evlis(Obj li) {
+  Obj res = LISPM_SYM_NIL;
   FOR_EACH_C(expr, li) { res = C(eval(expr), res); }
   return list_reverse_inplace(res);
 }
-static Sym evapply_lambda(Sym fn, Sym args) {
-  LISPM_ASSERT(lispm_sym_is_triplet(fn));
-  Sym captures, argf, body, shadow = LISPM_SYM_NIL;
+static Obj evapply_lambda(Obj fn, Obj args) {
+  LISPM_ASSERT(lispm_obj_is_triplet(fn));
+  Obj captures, argf, body, shadow = LISPM_SYM_NIL;
   T_UNPACK(fn, captures, argf, body);
   FOR_EACH_T(name, val, captures) { shadow = htable_shadow_append(shadow, name, val); }
 
-  Sym argv = args, name, value;
+  Obj argv = args, name, value;
   while (argf != LISPM_SYM_NIL && argv != LISPM_SYM_NIL) { /* arguments */
     C_UNPACK(argf, name, argf);
     C_UNPACK(argv, value, argv);
     shadow = htable_shadow_append(shadow, name, value);
   }
-  LISPM_EVAL_CHECK(lispm_sym_is_nil(argf) && lispm_sym_is_nil(argv), fn, panic,
-                   "number of formal arguments does not match the number of passed arguments: ", fn);
-  Sym res = eval(body);
+  LISPM_EVAL_CHECK(lispm_obj_is_nil(argf) && lispm_obj_is_nil(argv), fn, panic,
+                   "number of formal arguments does not match the number of "
+                   "passed arguments: ",
+                   fn);
+  Obj res = eval(body);
   htable_shadow_rollback(shadow);
   return res;
 }
-static Sym evletrec(Sym arg) {
-  Sym lambda, exprs, shadow = LISPM_SYM_NIL;
+static Obj evletrec(Obj arg) {
+  Obj lambda, exprs, shadow = LISPM_SYM_NIL;
   C_UNPACK(arg, lambda, exprs);
   FOR_EACH_C(name, T_2(lambda)) { shadow = htable_shadow_append(shadow, name, PARSE_SYM_UNBOUND); }
-  Sym res = evapply_lambda(lambda, evlis(exprs));
+  Obj res = evapply_lambda(lambda, evlis(exprs));
   htable_shadow_rollback(shadow);
   return res;
 }
 
-static Sym evapply(Sym expr) {
-  Sym f, args;
+static Obj evapply(Obj expr) {
+  Obj f, args;
   C_UNPACK(evlis(expr), f, args);
 
-  const struct Builtin *bi = lispm_sym_is_builtin_sym(f) ? lispm_builtins_start + lispm_builtin_sym_offs(f) : 0;
+  const struct LispmBuiltin *bi = lispm_obj_is_builtin_sym(f) ? lispm_builtins_start + lispm_builtin_sym_offs(f) : 0;
   LISPM_ASSERT(!bi || !bi->sema);
-  LISPM_EVAL_CHECK((bi && bi->eval) || lispm_sym_is_triplet(f), f, panic, "a function expected, got: ", f);
+  LISPM_EVAL_CHECK((bi && bi->eval) || lispm_obj_is_triplet(f), f, panic, "a function expected, got: ", f);
 
   LISPM_TRACE(apply_enter, f, f, args);
-  Sym res = bi ? bi->eval(args) : evapply_lambda(f, args);
+  Obj res = bi ? bi->eval(args) : evapply_lambda(f, args);
   LISPM_TRACE(apply_leave);
   return res;
 }
-static Sym eval(Sym syn) {
-  if (lispm_sym_is_nil(syn) || lispm_sym_is_shortnum(syn)) return syn;
-  if (lispm_sym_is_literal(syn)) {
+static Obj eval(Obj syn) {
+  if (lispm_obj_is_nil(syn) || lispm_obj_is_shortnum(syn)) return syn;
+  if (lispm_obj_is_literal(syn)) {
     LISPM_EVAL_CHECK(htable_entry_is_rvalue(syn), syn, panic, "cannot use symbol as a value: ", syn);
-    Sym res = htable_entry_get_assoc(syn);
+    Obj res = htable_entry_get_assoc(syn);
     LISPM_EVAL_CHECK(res != PARSE_SYM_UNBOUND, syn, unbound_symbol, syn);
     return res;
   }
-  Sym form, args;
+  Obj form, args;
   C_UNPACK(syn, form, args);
 
-  const struct Builtin *bi = lispm_builtins_start + lispm_builtin_sym_offs(htable_entry_get_assoc(form));
+  const struct LispmBuiltin *bi = lispm_builtins_start + lispm_builtin_sym_offs(htable_entry_get_assoc(form));
   unsigned mark = M.sp - M.stack;
-  Sym res = gc(bi->eval(args), mark);
+  Obj res = gc(bi->eval(args), mark);
   return res;
 }
 
 /* API */
-Sym lispm_eval(const char *pc, const char *pc_end) { return eval(sema(lispm_parse_quote(pc, pc_end))); }
-static inline int lispm_is_valid_result(Sym e) {
-  return lispm_sym_is_nil(e) || lispm_sym_is_atom(e) || lispm_sym_is_cons(e);
+Obj lispm_eval0(const char *pc, const char *pc_end) { return eval(sema(lispm_parse_quote0(pc, pc_end))); }
+static inline int lispm_is_valid_result(Obj e) {
+  return lispm_obj_is_nil(e) || lispm_obj_is_atom(e) || lispm_obj_is_cons(e);
 }
 static void lispm_main(void) {
-  Sym r = lispm_eval(M.pc, M.program_end);
+  Obj r = lispm_eval0(M.pc, M.program_end);
   LISPM_EVAL_CHECK(lispm_is_valid_result(r), r, panic, "invalid result of evaluation: ", r);
   M.stack[0] = r;
 }
 
 void lispm_init(void) {
-  /* TODO: this function can throw, and it is usually called unguarded, which is wrong */
+  /* TODO: this function can throw, and it is usually called unguarded, which is
+   * wrong */
   LISPM_ASSERT(lispm_is_valid_config());
   M.sp = M.stack_end;
   M.tp = M.strings + 4; /* we use zero as sentinel value for missing entry in htable,
                            hence no value can have a zero offset into the strings table */
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
   M.htable_index_shift = __builtin_clz(M.htable_index_size) + 1;
-  M.parse_frame = LISPM_SYM_NIL;
-  M.frame_depth = 1;
+  M.lex_frame = LISPM_SYM_NIL;
+  M.lex_frame_depth = 1;
 
   const unsigned bilen = lispm_builtins_end - lispm_builtins_start;
   lispm_st_obj_alloc0(bilen);
   for (int i = 0; i < bilen; ++i) {
-    const struct Builtin *bi = lispm_builtins_start + i;
+    const struct LispmBuiltin *bi = lispm_builtins_start + i;
     const char *n = bi->name;
     if (!n) continue;
-    Sym s = htable_ensure(n, n + __builtin_strlen(n), 0);
+    Obj s = htable_ensure(n, n + __builtin_strlen(n), 0);
     if (htable_entry_is_lvalue(s)) {
       unsigned *entry = M.htable + lispm_literal_ht_offs(s);
       unsigned not_rvalue = bi->sema ? 1 : 0;
@@ -523,15 +492,15 @@ void lispm_init(void) {
   }
 }
 
-Sym lispm_exec(void) {
+Obj lispm_exec(void) {
   LISPM_ASSERT(M.htable_index_size != 0); /* check that the machine has been initialized */
   lispm_rt_try(lispm_main);
   return M.stack[0];
 }
 
-static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
+static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
-const struct Builtin CORE[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
+const struct LispmBuiltin CORE[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
     {"#err!"},
     {"quote", evquote, sema_quote},
     {"(apply)", evapply, sema_apply},

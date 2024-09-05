@@ -31,6 +31,6 @@ extern struct LispmTraceCallbacks lispm_trace;
   do {                                                                                                                 \
     if (!(cond)) {                                                                                                     \
       LISPM_TRACE(event, __FILE__, __LINE__, ##__VA_ARGS__);                                                           \
-      lispm_panic(ctx);                                                                                                \
+      lispm_panic0(ctx);                                                                                               \
     }                                                                                                                  \
   } while (0)

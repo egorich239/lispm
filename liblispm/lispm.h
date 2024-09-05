@@ -11,12 +11,6 @@ enum {
   LISPM_STACK_BOTTOM_OFFSET = 8u,
 };
 
-/* External symbols that runtime must provide: */
-/* Machine must be initialized before calling lispm_exec(). */
-extern struct Lispm lispm;
-
-#define LISPM_UPPER_BITS(n) ~(~0u >> (n))
-
 /* API */
 static inline int lispm_is_power_of_two(unsigned i) { return i && !(i & (i - 1)); }
 static inline int lispm_is_valid_config(void) {
@@ -33,36 +27,44 @@ static inline int lispm_is_valid_config(void) {
          && lispm_shortnum_can_represent(m->htable_end - m->htable);
 }
 
-/* Runs lispm and returns the evaluated symbol */
+/**
+ * Initializes the state of lispm object.
+ *
+ * TODO: This function currently can throw, which is sad because this leads to segfault.
+ */
 void lispm_init(void);
-Sym lispm_exec(void);
 
-static inline unsigned lispm_literal_str_offs(Sym s) {
-  LISPM_ASSERT(lispm_sym_is_literal(s));
-  return lispm.htable[lispm_literal_ht_offs(s)] >> 2;
-}
+/**
+ * Parses and executes the program, located at `lispm.pc`.
+ *
+ * If the lexing, parsing or evaluation causes a runtime error, then error symbol is returned.
+ */
+LispmObj lispm_exec(void);
 
-/* Internal API */
-__attribute__((noreturn)) void lispm_panic(Sym ctx);
+/* Internal API. Zero in the function name denotes that it can cause runtime error, and must be executed within
+ * `lispm_rt_try()` context. */
 
-/* pc must be between M.program and M.program_end */
-Sym lispm_parse_quote(const char *pc, const char *pc_end);
-Sym lispm_eval(const char *pc, const char *pc_end);
+/**
+ * Terminates the VM with `#err!`, puts `ctx` at `lispm.stack[1]`.
+ */
+__attribute__((noreturn)) void lispm_panic0(LispmObj ctx);
 
-unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit);
+/**
+ * Parses an S-expression, starting at `pc`, and terminating no later than `pc_end`.
+ *
+ * Terminates the VM wirh `#err!` if `pc_end` has been reached during parsing, or any other parse error occured.
+ */
+LispmObj lispm_parse_quote0(const char *pc, const char *pc_end);
 
-Sym lispm_st_obj_alloc(unsigned k);
-Sym *lispm_st_obj_unpack(Sym s);
+/**
+ * Parses and executes S-expression in the current context of the VM.
+ *
+ * Terminates the VM wirh `#err!` if `pc_end` has been reached during parsing, any other parse or runtime error occured.
+ */
+LispmObj lispm_eval0(const char *pc, const char *pc_end);
 
-static inline Sym lispm_cons_alloc(Sym car, Sym cdr) {
-  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_CONS);
-  lispm.sp[0] = cdr, lispm.sp[1] = car;
-  return res;
-}
-static inline Sym lispm_triplet_alloc(Sym a, Sym b, Sym n) {
-  Sym res = lispm_st_obj_alloc(LISPM_ST_OBJ_TRIPLET);
-  lispm.sp[0] = n, lispm.sp[1] = a, lispm.sp[2] = b;
-  return res;
-}
-
-Sym lispm_sym_from_builtin(const struct Builtin *bi);
+/**
+ * Outputs up to `limit` first elements of (potentially empty) list `li` into `out` array.
+ * Returns the number of elements in the list, if the list is shorter than limit, otherwise returns `~0u`.
+ */
+unsigned lispm_list_scan(LispmObj *out, LispmObj li, unsigned limit);
