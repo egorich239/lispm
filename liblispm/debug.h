@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lispm.h"
+#include <liblispm/lispm.h>
 
 void lispm_trace_stack(void);
 void lispm_trace_full(void);

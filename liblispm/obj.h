@@ -1,8 +1,8 @@
 #pragma once
 
-#include "lispm-config.h"
-#include "lispm-trace.h"
-#include "lispm-types.h"
+#include <liblispm/config.h>
+#include <liblispm/trace.h>
+#include <liblispm/types.h>
 
 /* Sym API */
 /* nil */

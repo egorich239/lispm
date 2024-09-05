@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lispm-types.h"
+#include <liblispm/types.h>
 
 /*
  * Arguments are provided as a SYM_NIL-terminated CONS-sequence.
@@ -19,4 +19,4 @@ struct __attribute__((aligned(16))) Builtin {
 };
 /* Convenience macro to implement extensions */
 #define LISPM_BUILTINS_EXT(name)                                                                                       \
-  static const struct Builtin name[] __attribute__((section(".lispm.rodata.builtins.ext"), aligned(16), used))
+  const struct Builtin name[] __attribute__((section(".lispm.rodata.builtins.ext"), aligned(16), used))

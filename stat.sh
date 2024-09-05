@@ -2,9 +2,7 @@
 
 set -e
 
-readonly FILES=(lispm.o lrt0.o lispm-funs.o)
-
-for f in ${FILES[@]} ; do
+for f in $@ ; do
     echo $f
     objdump -h $f | grep -E '.rodata|.text|.data' | while IFS= read -r l; do
         L=($l)

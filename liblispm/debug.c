@@ -1,8 +1,8 @@
-#include "debug.h"
-#include "lispm-builtins.h"
-#include "lispm-obj.h"
-#include "lispm.h"
-#include "lrt0.h"
+#include <liblispm/debug.h>
+
+#include <liblispm/builtins.h>
+#include <liblispm/lispm.h>
+#include <liblispm/obj.h>
 
 #include <stdio.h>
 

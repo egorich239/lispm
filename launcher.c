@@ -5,10 +5,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-#include "debug.h"
-#include "lispm.h"
-
-extern struct Builtin lispm_builtins[];
+#include <liblispm/debug.h>
+#include <liblispm/lispm.h>
 
 Sym stack[4 * 1024 * 1024];
 char strings[16 * 1024 * 1024];

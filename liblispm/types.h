@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lispm-config.h"
+#include <liblispm/config.h>
 
 /** Symbol, one of:
  *  - NIL:            corresponds to empty list

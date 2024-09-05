@@ -1,6 +1,6 @@
-#include "lispm-builtins.h"
-#include "lispm-obj.h"
-#include "lispm.h"
+#include <liblispm/builtins.h>
+#include <liblispm/lispm.h>
+#include <liblispm/obj.h>
 
 #define M lispm
 #define C lispm_cons_alloc

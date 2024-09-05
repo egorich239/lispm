@@ -1,38 +1,49 @@
-TESTS = $(wildcard test-*.c)
-LISPM_SRC = ../lispm.c ../lrt0.c ../lispm-funs.c ../rt-std.c ../debug.c ../lispm.ld
-CFLAGS = -Wall -Werror -fomit-frame-pointer -gdwarf-2 -g3 -mtune=generic \
+PROJECT_ROOT := $(or $(PROJECT_ROOT),..)
+BUILD_ROOT := $(or $(BUILD_ROOT),$(PROJECT_ROOT)/build)
+SRC_DIR := $(shell realpath --relative-to=$(PROJECT_ROOT) $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+BUILD_DIR := $(BUILD_ROOT)/$(SRC_DIR)
+
+TESTS := $(foreach f,$(wildcard test-*.c),$(basename $(f)))
+RUN_TESTS := $(foreach t,$(TESTS),run-$(t))
+
+test: $(RUN_TESTS)
+.PHONY: test $(RUN_TESTS)
+
+DEPS := \
+	$(BUILD_ROOT)/liblispm/liblispm-core11.a \
+	$(BUILD_ROOT)/liblispm/liblispm-rtstd11.a \
+	$(BUILD_ROOT)/liblispm/liblispm-debug11.a \
+	$(BUILD_ROOT)/liblispm/lispm.ld
+
+CFLAGS := -Wall -Werror -fomit-frame-pointer -gdwarf-2 -g3 -mtune=generic \
 	-O0 -DLISPM_CONFIG_ASSERT=1 -DLISPM_CONFIG_VERBOSE=1 \
-	-I.. -Wl,-T../lispm.ld \
+	-I$(PROJECT_ROOT)
+LDFLAGS := \
+	-L$(BUILD_ROOT)/liblispm \
+	-Wl,--whole-archive \
+	-llispm-core11 \
+	-Wl,--no-whole-archive \
+	-llispm-rtstd11 -llispm-debug11 \
+	-Wl,-T$(BUILD_ROOT)/liblispm/lispm.ld
 
-CLEANFILES =
+$(BUILD_DIR):
+	mkdir -p $@
 
-test-eval-tests.txt: $(wildcard eval/*)
-	cat $^ >$@
+.make-deps: | $(BUILD_DIR)
+	$(MAKE) -C ../liblispm $(DEPS)
+.PHONY: .make-deps
 
-test-eval-tests.o: test-eval-tests.txt
-	$(LD) -r -b binary -z noexecstack -o $@ $^
+$(BUILD_DIR)/%.data.txt: % | $(BUILD_DIR)
+	cat $</* >$@
 
-CLEANFILES += test-eval-tests.txt test-eval-tests.o 
-test-eval: test-eval.c test-eval-tests.o $(LISPM_SRC)
-	$(CC) $(CFLAGS) $(filter %.o %.c,$^) -o $@
+$(BUILD_DIR)/%.data.o: $(BUILD_DIR)/%.data.txt
+	cd $(dir $<); $(LD) -r -b binary -z noexecstack -o $(@F) $(<F)
 
-test-captures-tests.txt: $(wildcard captures/*)
-	cat $^ >$@
+$(BUILD_DIR)/test-%: test-%.c $(BUILD_DIR)/%.data.o | .make-deps
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
-test-captures-tests.o: test-captures-tests.txt
-	$(LD) -r -b binary -z noexecstack -o $@ $^
+$(TESTS): %: $(BUILD_DIR)/%
+.PHONY: $(TESTS)
 
-CLEANFILES += test-captures-tests.txt test-captures-tests.o 
-test-captures: test-captures.c test-captures-tests.o $(LISPM_SRC)
-	$(CC) $(CFLAGS) $(filter %.o %.c,$^) -o $@
-
-RUN_TESTS = $(foreach test,$(TESTS),$(patsubst %.c,%,run-$(test)))
-.PHONY: $(RUN_TESTS)
-$(RUN_TESTS): run-%: %
-	./$^
-
-.PHONY: clean
-clean:
-	rm -f $(CLEANFILES) $(patsubst %.c,%,$(TESTS))
-
-all: $(RUN_TESTS) clean
+$(RUN_TESTS): run-%: $(BUILD_DIR)/%
+	$<

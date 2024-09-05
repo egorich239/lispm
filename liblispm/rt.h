@@ -1,7 +1,5 @@
 #pragma once
 
-#include "lispm-config.h"
-
 /* Abort is an external symbol provided by runtime */
 extern __attribute__((noreturn)) void lispm_rt_abort(void);
 /* Invokes `fn` such that a call to `lispm_rt_throw()` causes immediate stack unwinding

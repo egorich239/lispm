@@ -1,8 +1,8 @@
 #pragma once
 
-#include "lispm-config.h"
-#include "lispm-rt.h"
-#include "lispm-types.h"
+#include <liblispm/config.h>
+#include <liblispm/rt.h>
+#include <liblispm/types.h>
 
 #if LISPM_CONFIG_VERBOSE
 extern struct LispmTraceCallbacks lispm_trace;

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "lispm-builtins.h"
-#include "lispm-obj.h"
-#include "lispm-rt.h"
-#include "lispm-trace.h"
-#include "lispm-types.h"
+#include <liblispm/builtins.h>
+#include <liblispm/obj.h>
+#include <liblispm/rt.h>
+#include <liblispm/trace.h>
+#include <liblispm/types.h>
 
 enum {
   /* The bottom of the stack is used to communicate information about errors. */

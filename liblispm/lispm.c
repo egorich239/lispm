@@ -1,8 +1,8 @@
-#include "lispm.h"
-#include "lispm-builtins.h"
-#include "lispm-obj.h"
-#include "lispm-trace.h"
-#include "lispm-types.h"
+#include <liblispm/builtins.h>
+#include <liblispm/lispm.h>
+#include <liblispm/obj.h>
+#include <liblispm/trace.h>
+#include <liblispm/types.h>
 
 #define M lispm
 
@@ -45,7 +45,7 @@
 extern struct Builtin lispm_builtins_start[];
 extern struct Builtin lispm_builtins_end[];
 
-static const struct Builtin CORE[];
+const struct Builtin CORE[];
 #define BUILTIN_ERR_INDEX   (0)
 #define BUILTIN_QUOTE_INDEX (1)
 #define BUILTIN_APPLY_INDEX (2)
@@ -77,7 +77,7 @@ unsigned lispm_list_scan(Sym *out, Sym li, unsigned limit) {
 
 static Sym list_reverse_inplace(Sym li) {
   /* not a public interface because it actually changes the object state */
-  LISPM_ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_cons(li) || lispm_sym_is_triplet(li));
+  LISPM_ASSERT(lispm_sym_is_nil(li) || lispm_sym_is_st_obj(li));
   Sym cur = li, prev = LISPM_SYM_NIL, next, *cons;
   while (!lispm_sym_is_nil(cur)) {
     cons = lispm_st_obj_unpack(cur), next = cons[0];
@@ -186,7 +186,7 @@ ensure_insert:
 }
 
 /* lexer */
-#include "lexer.inc.h"
+#include <liblispm/lexer.inc.h>
 
 #define TOK_SYM(c) (((c) << 8) | 19u)
 #define TOK_LPAREN TOK_SYM('(')
@@ -531,7 +531,7 @@ Sym lispm_exec(void) {
 
 static Sym PANIC(Sym a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
-static const struct Builtin CORE[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
+const struct Builtin CORE[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
     {"#err!"},
     {"quote", evquote, sema_quote},
     {"(apply)", evapply, sema_apply},
