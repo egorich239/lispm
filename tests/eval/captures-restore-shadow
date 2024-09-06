@@ -1,7 +1,4 @@
-(
-    ((x 5))
-)
-
+captures:restore-shadow
 (let
     ((x 5)
      (y (lambda () x)))

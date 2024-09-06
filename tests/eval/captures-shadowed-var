@@ -1,7 +1,4 @@
-(
-    ()
-)
-
+captures:shadowed-var
 (let
     ((x 3))
     ((lambda (x) x) 5)

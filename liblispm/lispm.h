@@ -64,6 +64,8 @@ LispmObj lispm_parse_quote0(const char *pc, const char *pc_end);
  */
 LispmObj lispm_eval0(const char *pc, const char *pc_end);
 
+LispmObj lispm_return0(LispmObj obj);
+
 /**
  * Outputs up to `limit` first elements of (potentially empty) list `li` into `out` array.
  * Returns the number of elements in the list, if the list is shorter than limit, otherwise returns `~0u`.

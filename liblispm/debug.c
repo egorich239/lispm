@@ -73,6 +73,7 @@ void lispm_print_short(Obj sym) {
       lispm_print_short(sym);
     }
     fprintf(stderr, lispm_obj_is_nil(sym) ? ")" : "]");
+    return;
   }
   if (lispm_obj_is_st_obj(sym)) {
     Obj *cab = lispm_obj_unpack(sym);

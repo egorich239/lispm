@@ -102,6 +102,8 @@ static inline int lispm_obj_is_cons(LispmObj s) { return lispm_st_obj_kind(s) ==
 /* lambda */
 static inline LispmObj lispm_make_triplet(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_TRIPLET, st_offs); }
 static inline int lispm_obj_is_triplet(LispmObj s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_TRIPLET; }
+static inline int lispm_obj_is_quad(LispmObj s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_QUAD; }
+static inline int lispm_obj_is_penta(LispmObj s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_PENTA; }
 
 /* specials, ctors are defined in macros, to be compile time consts */
 static inline int lispm_obj_is_special(LispmObj s) { return (s & 3u) == 3u; }
@@ -137,5 +139,15 @@ static inline LispmObj lispm_cons_alloc(LispmObj car, LispmObj cdr) {
 static inline LispmObj lispm_triplet_alloc(LispmObj a, LispmObj b, LispmObj n) {
   LispmObj res = lispm_obj_alloc0(LISPM_ST_OBJ_TRIPLET);
   lispm.sp[0] = n, lispm.sp[1] = a, lispm.sp[2] = b;
+  return res;
+}
+static inline LispmObj lispm_quad_alloc(LispmObj a, LispmObj b, LispmObj c, LispmObj n) {
+  LispmObj res = lispm_obj_alloc0(LISPM_ST_OBJ_QUAD);
+  lispm.sp[0] = n, lispm.sp[1] = a, lispm.sp[2] = b, lispm.sp[3] = c;
+  return res;
+}
+static inline LispmObj lispm_penta_alloc(LispmObj a, LispmObj b, LispmObj c, LispmObj d, LispmObj n) {
+  LispmObj res = lispm_obj_alloc0(LISPM_ST_OBJ_PENTA);
+  lispm.sp[0] = n, lispm.sp[1] = a, lispm.sp[2] = b, lispm.sp[3] = c, lispm.sp[4] = d;
   return res;
 }

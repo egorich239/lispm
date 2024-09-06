@@ -1,8 +1,4 @@
-;
-(
-    ()
-)
-
+captures:let-x1
 (let
     ((x 3))
     ((lambda (y) (let ((x y)) x)) 5)
@@ -10,22 +6,14 @@
 5
 
 
-;
-(
-    ((x 3))
-)
-
+captures:let-x2
 (let
     ((x 3))
     ((lambda (y) (let ((y x)) y)) 5)
 )
 3
 
-;
-(
-    ((x 3))
-)
-
+captures:let-x3
 (let
     ((x 3))
     ((lambda (y) (let ((z x)) y)) 5)

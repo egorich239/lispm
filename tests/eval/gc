@@ -1,0 +1,23 @@
+gc-pressure
+(letrec
+    (
+        (make-list. (lambda (n acc) (cond
+            ((eq? n 0) acc)
+            (#t (make-list. (- n 1) (cons n acc)))
+        )))
+        (make-list (lambda (n) (make-list. n ())))
+        (length-list. (lambda (seq acc) (cond
+            ((eq? seq ()) acc)
+            (#t (length-list. (cdr seq) (+ acc 1)))
+        )))
+        (length-list (lambda (seq) (length-list. seq 0)))
+    )
+    (list
+        (make-list 6)
+        (length-list (make-list 200))
+    )
+)
+(
+    (1 2 3 4 5 6)
+    200
+)

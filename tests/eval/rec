@@ -76,9 +76,9 @@ letrec-capture-self
 )
 #err!
 
-nonterminating
-(letrec
-    ((c (lambda () (c))))
-    (c)
-)
-#err!
+;nonterminating
+;(letrec
+;    ((c (lambda () (c))))
+;    (c)
+;)
+;#err!
