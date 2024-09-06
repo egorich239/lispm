@@ -1,5 +1,6 @@
-#include <liblispm/builtins.h>
 #include <liblispm/lispm.h>
+
+#include <liblispm/builtins.h>
 #include <liblispm/obj.h>
 #include <liblispm/rt.h>
 #include <liblispm/trace.h>
@@ -17,6 +18,7 @@ enum {
   BUILTIN_APPLY_INDEX = 1,
   BUILTIN_ASSOC_INDEX = 2,
   BUILTIN_QUOTE_INDEX = 3,
+  BUILTIN_LAMBDA_INDEX = 4,
 };
 
 /* builtins */
@@ -435,7 +437,9 @@ static Obj evletrec(Obj arg) {
   Obj lambda, exprs, shadow = LISPM_SYM_NIL;
   C_UNPACK(arg, lambda, exprs);
   FOR_EACH_C(name, T_2(lambda)) { shadow = htable_shadow_append(shadow, name, PARSE_SYM_UNBOUND); }
-  Obj res = evapply_lambda(lambda, evlis(exprs));
+  Obj closure = C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_LAMBDA_INDEX), lambda);
+  Obj apply = C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_APPLY_INDEX), C(closure, exprs));
+  Obj res = eval(apply);
   htable_shadow_rollback(shadow);
   return res;
 }
@@ -522,8 +526,8 @@ const struct LispmBuiltin LISPM_SYN[] __attribute__((section(".lispm.rodata.buil
     {"(apply)", evapply, sema_apply},
     {"(assoc)", evassoc},
     {"quote", evquote, sema_quote},
-    {"cond", evcon, sema_con},
     {"lambda", evlambda, sema_lambda},
+    {"cond", evcon, sema_con},
     {"let", evlet, sema_let},
     {"letrec", evletrec, sema_letrec},
     {"panic!", PANIC},
