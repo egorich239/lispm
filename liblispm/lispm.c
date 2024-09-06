@@ -74,20 +74,19 @@ Obj lispm_obj_alloc0(enum LispmStObjKind k) {
 }
 Obj *lispm_obj_unpack(Obj s) { return M.stack + lispm_obj_st_offs(s); }
 static Obj gc0(Obj s, unsigned high_mark, unsigned offset) {
-  if (!lispm_obj_is_st_obj(s) || lispm_obj_st_offs(s) >= high_mark) return s;
   TRACE_NATIVE_STACK();
-  Obj tail = LISPM_SYM_NIL, *src, *dest, new_tail;
-  for (;;) {
+  Obj tail = LISPM_SYM_NIL, *dest;
+  while (lispm_obj_is_st_obj(s) && lispm_obj_st_offs(s) < high_mark) {
     unsigned sz = lispm_obj_st_size(s);
-    src = lispm_obj_unpack(s), new_tail = lispm_obj_alloc0(lispm_obj_st_kind(s)), dest = M.sp;
-    dest[0] = tail, tail = new_tail;
+    Obj *src = lispm_obj_unpack(s), new_tail = lispm_obj_alloc0(lispm_obj_st_kind(s));
+    dest = M.sp, dest[0] = tail, tail = new_tail;
     for (unsigned p = 1; p < sz; ++p)
       dest[p] = gc0(src[p], high_mark, offset);
-    if (!lispm_obj_is_st_obj(src[0]) || lispm_obj_st_offs(src[0]) >= high_mark) break;
     s = src[0];
   }
+  if (lispm_obj_is_nil(tail)) return s;
   Obj res = list_reverse_inplace(tail, offset);
-  dest[0] = gc0(src[0], high_mark, offset);
+  dest[0] = gc0(s, high_mark, offset);
   return res;
 }
 static Obj gc(Obj root, unsigned high_mark) {
