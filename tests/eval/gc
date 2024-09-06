@@ -14,10 +14,10 @@ gc-pressure
     )
     (list
         (make-list 6)
-        (length-list (make-list 200))
+        (length-list (make-list 2000))
     )
 )
 (
     (1 2 3 4 5 6)
-    200
+    2000
 )

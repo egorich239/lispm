@@ -48,15 +48,15 @@ unsigned lispm_list_scan(Obj *out, Obj li, unsigned limit) {
   return lispm_obj_is_nil(it) ? cntr : ~0u;
 }
 
-static Obj list_reverse_inplace(Obj li) {
+static Obj list_reverse_inplace(Obj li, unsigned offset) {
   /* not a public interface because it actually changes the object state */
   LISPM_ASSERT(lispm_obj_is_nil(li) || lispm_obj_is_st_obj(li));
   Obj cur = li, prev = NIL, next, *cons;
   while (!lispm_obj_is_nil(cur)) {
     cons = lispm_obj_unpack(cur), next = cons[0];
-    cons[0] = prev, prev = cur, cur = next;
+    cons[0] = lispm_obj_st_move(prev, offset), prev = cur, cur = next;
   }
-  return prev;
+  return lispm_obj_st_move(prev, offset);
 }
 
 /* stack functions */
@@ -68,16 +68,22 @@ Obj lispm_obj_alloc0(enum LispmStObjKind k) {
   return lispm_make_st_obj(k, lispm_st_obj_alloc0(lispm_obj_st_size(k)) - M.stack);
 }
 Obj *lispm_obj_unpack(Obj s) { return M.stack + lispm_obj_st_offs(s); }
-static Obj gc0(Obj s, unsigned high_mark, unsigned depth) {
-  /* TODO: guarantee that gc0 over list (of atoms) is non-recursive */
+static Obj gc0(Obj s, unsigned high_mark, unsigned offset) {
   if (!lispm_obj_is_st_obj(s) || lispm_obj_st_offs(s) >= high_mark) return s;
   TRACE_NATIVE_STACK();
-  unsigned sz = lispm_obj_st_size(s);
-  Obj res = lispm_obj_alloc0(lispm_obj_st_kind(s));
-  Obj *t = M.sp, *f = lispm_obj_unpack(s) + sz;
-  for (Obj *m = t + sz; m != t;)
-    *--m = gc0(*--f, high_mark, depth);
-  return lispm_obj_st_move(res, depth);
+  Obj tail = LISPM_SYM_NIL, *src, *dest, new_tail;
+  for (;;) {
+    unsigned sz = lispm_obj_st_size(s);
+    src = lispm_obj_unpack(s), new_tail = lispm_obj_alloc0(lispm_obj_st_kind(s)), dest = M.sp;
+    dest[0] = tail, tail = new_tail;
+    for (unsigned p = 1; p < sz; ++p)
+      dest[p] = gc0(src[p], high_mark, offset);
+    if (!lispm_obj_is_st_obj(src[0]) || lispm_obj_st_offs(src[0]) >= high_mark) break;
+    s = src[0];
+  }
+  Obj res = list_reverse_inplace(tail, offset);
+  dest[0] = gc0(src[0], high_mark, offset);
+  return res;
 }
 static Obj gc(Obj root, unsigned high_mark) {
   unsigned low_mark = M.sp - M.stack;
@@ -268,7 +274,7 @@ static Obj parse(Obj tok) {
   Obj res = C(parse(tok), NIL);
   while ((tok = lex()) != TOK_RPAREN)
     res = C(parse(tok), res);
-  return list_reverse_inplace(res);
+  return list_reverse_inplace(res, 0);
 }
 Obj lispm_parse_quote0(const char *pc, const char *pc_end) {
   LISPM_ASSERT(M.program <= pc && pc <= pc_end && pc_end <= M.program_end);
@@ -294,7 +300,7 @@ static Obj sema_con(Obj brans) {
                      "conditional branch must have form (condition action), got: ", bran);
     res = T(sema(conact[0]), sema(conact[1]), res);
   }
-  return list_reverse_inplace(res);
+  return list_reverse_inplace(res, 0);
 }
 static Obj sema_lambda(Obj def) {
   Obj argsbody[2];
@@ -343,12 +349,12 @@ static Obj sema_letrec(Obj def) {
   }
   FOR_EACH_C(body, bodies) { exprs = C(sema(body), exprs); }
   Obj expr = sema(asgnsexpr[1]), captures = parse_frame_leave();
-  return C(T(captures, list_reverse_inplace(args), expr), exprs);
+  return C(T(captures, list_reverse_inplace(args, 0), expr), exprs);
 }
 static Obj sema_apply(Obj syn) {
   Obj res = NIL;
   FOR_EACH_C(arg, syn) { res = C(sema(arg), res); }
-  return list_reverse_inplace(res);
+  return list_reverse_inplace(res, 0);
 }
 static Obj sema(Obj syn) {
   if (lispm_obj_is_nil(syn) || lispm_obj_is_shortnum(syn)) return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_QUOTE_INDEX), syn);
@@ -417,7 +423,7 @@ static Obj evlet(Obj arg) { return arg; }
 static Obj evlis(Obj li) {
   Obj res = NIL;
   FOR_EACH_C(expr, li) { res = C(eval(expr), res); }
-  return list_reverse_inplace(res);
+  return list_reverse_inplace(res, 0);
 }
 static Obj evapply_lambda(Obj fn, Obj args) {
   LISPM_ASSERT(lispm_obj_is_triplet(fn));
