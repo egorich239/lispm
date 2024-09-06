@@ -58,6 +58,11 @@ static Obj list_reverse_inplace(Obj li, unsigned offset) {
   }
   return lispm_obj_st_move(prev, offset);
 }
+static Obj list_map(Obj li, Obj (*fn)(Obj)) {
+  Obj res = NIL;
+  FOR_EACH_C(v, li) { res = C(fn(v), res); }
+  return list_reverse_inplace(res, 0);
+}
 
 /* stack functions */
 static inline Obj *lispm_st_obj_alloc0(unsigned size) {
@@ -287,6 +292,10 @@ Obj lispm_parse_quote0(const char *pc, const char *pc_end) {
   return res;
 }
 
+static Obj sema_apply_lambda(Obj proto, Obj args) {
+  Obj closure = C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_LAMBDA_INDEX), proto);
+  return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_APPLY_INDEX), C(closure, args));
+}
 static Obj sema(Obj syn);
 static Obj sema_quote(Obj args) {
   Obj arg;
@@ -317,7 +326,7 @@ static Obj sema_lambda(Obj def) {
   return T(captures, argsbody[0], body);
 }
 static Obj sema_let(Obj def) {
-  Obj asgnsexpr[2], asgns = NIL, expr, nameval[2], closure;
+  Obj asgnsexpr[2], asgns = NIL, expr, nameval[2];
   LISPM_EVAL_CHECK(lispm_list_scan(asgnsexpr, def, 2) == 2, def, panic,
                    "let must define a list of assignments followed by expression, got: ", def);
   C_ENSURE(asgnsexpr[0], "list of assignments expected")
@@ -329,14 +338,11 @@ static Obj sema_let(Obj def) {
     parse_frame_bind(nameval[0], 0);
   }
   expr = sema(asgnsexpr[1]);
-  FOR_EACH_T(name, val, asgns) {
-    closure = C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_LAMBDA_INDEX), T(parse_frame_leave(), C(name, NIL), expr));
-    expr = C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_APPLY_INDEX), C(closure, C(val, NIL)));
-  }
+  FOR_EACH_T(name, val, asgns) { expr = sema_apply_lambda(T(parse_frame_leave(), C(name, NIL), expr), C(val, NIL)); }
   return C(expr, NIL);
 }
 static Obj sema_letrec(Obj def) {
-  Obj asgnsexpr[2], args = NIL, bodies = NIL, exprs = NIL, nameval[2];
+  Obj asgnsexpr[2], args = NIL, exprs = NIL, nameval[2];
   LISPM_EVAL_CHECK(lispm_list_scan(asgnsexpr, def, 2) == 2, def, panic,
                    "letrec must define a list of assignments followed by expression, got: ", def);
   parse_frame_enter();
@@ -345,17 +351,11 @@ static Obj sema_letrec(Obj def) {
     LISPM_EVAL_CHECK(lispm_list_scan(nameval, asgn, 2) == 2 && lispm_obj_is_literal(nameval[0]), asgn, panic,
                      "assignment must have form (name expr), got: ", asgn);
     args = C(nameval[0], args);
-    bodies = C(nameval[1], bodies);
+    exprs = C(nameval[1], exprs);
     parse_frame_bind(nameval[0], 1);
   }
-  FOR_EACH_C(body, bodies) { exprs = C(sema(body), exprs); }
-  Obj expr = sema(asgnsexpr[1]), captures = parse_frame_leave();
-  return C(T(captures, list_reverse_inplace(args, 0), expr), exprs);
-}
-static Obj sema_apply(Obj syn) {
-  Obj res = NIL;
-  FOR_EACH_C(arg, syn) { res = C(sema(arg), res); }
-  return list_reverse_inplace(res, 0);
+  Obj vals = list_map(exprs, sema), expr = sema(asgnsexpr[1]), captures = parse_frame_leave();
+  return C(T(captures, args, expr), vals);
 }
 static Obj sema(Obj syn) {
   if (lispm_obj_is_nil(syn) || lispm_obj_is_shortnum(syn)) return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_QUOTE_INDEX), syn);
@@ -376,7 +376,7 @@ static Obj sema(Obj syn) {
   const struct LispmBuiltin *bi = lispm_builtins_start + lispm_builtin_sym_offs(assoc);
   if (bi && bi->sema) return C(assoc, bi->sema(args));
 sema_ret_apply:
-  return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_APPLY_INDEX), sema_apply(syn));
+  return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_APPLY_INDEX), list_map(syn, sema));
 }
 
 /* eval */
@@ -393,10 +393,10 @@ static Obj evframe_set(Obj frame, Obj name, Obj val) {
   Obj res = htable_entry_get_assoc(name);
   if ((res & 15u) == 15u && S_2(res & ~1u) == lispm_make_shortnum(M.frame_depth)) {
     S_1(res & ~1u) = val;
-    return frame;
+  } else {
+    frame = P(val, lispm_make_shortnum(M.frame_depth), res, name, frame);
+    htable_entry_set_assoc(name, frame | 15u);
   }
-  frame = P(val, lispm_make_shortnum(M.frame_depth), res, name, frame);
-  htable_entry_set_assoc(name, frame | 15u);
   return frame;
 }
 static void evframe_restore(Obj frame) {
@@ -421,11 +421,6 @@ static Obj evcon(Obj brans) {
   LISPM_EVAL_CHECK(0, NIL, panic, "condition branches exhausted", NIL);
 }
 static Obj evlet(Obj arg) { return arg; }
-static Obj evlis(Obj li) {
-  Obj res = NIL;
-  FOR_EACH_C(expr, li) { res = C(eval(expr), res); }
-  return list_reverse_inplace(res, 0);
-}
 static Obj evapply_lambda(Obj fn, Obj args) {
   LISPM_ASSERT(lispm_obj_is_triplet(fn));
   Obj captures, argf, body, ctx = NIL;
@@ -448,12 +443,10 @@ static Obj evletrec(Obj arg) {
   Obj lambda, exprs, ctx = NIL;
   C_UNPACK(arg, lambda, exprs);
   FOR_EACH_C(name, S_2(lambda)) { ctx = T(name, PARSE_SYM_UNBOUND, ctx); }
-  Obj closure = C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_LAMBDA_INDEX), lambda);
-  Obj apply = C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_APPLY_INDEX), C(closure, exprs));
-  return C(apply, ctx);
+  return C(sema_apply_lambda(lambda, exprs), ctx);
 }
 static Obj evapply(Obj expr) {
-  Obj es = evlis(expr), f, args;
+  Obj es = list_map(expr, eval), f, args;
   C_UNPACK(es, f, args);
   if (lispm_obj_is_builtin_sym(f)) return C(es, NIL);
   LISPM_EVAL_CHECK(lispm_obj_is_triplet(f), f, panic, "a function expected, got: ", f);
@@ -536,7 +529,7 @@ static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
 const struct LispmBuiltin LISPM_SYN[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
     {"#err!"},
-    {"(apply)", evapply, sema_apply},
+    {"(apply)", evapply},
     {"(assoc)", evassoc},
     {"quote", evquote, sema_quote},
     {"lambda", evlambda, sema_lambda},
