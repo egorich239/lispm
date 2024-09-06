@@ -34,7 +34,7 @@ __attribute__((noreturn)) void lispm_panic0(Obj ctx) {
   M.stack[1] = ctx;
   lispm_rt_throw();
 }
-LispmObj lispm_return0(LispmObj obj) { return C(C(NIL, obj), NIL); }
+LispmObj lispm_return0(LispmObj obj) { return C(NIL, obj); }
 
 /* list functions */
 unsigned lispm_list_scan(Obj *out, Obj li, unsigned limit) {
@@ -230,11 +230,11 @@ lex_num:
 /* parser */
 static void parse_frame_enter(void) {
   ++M.frame_depth;
-  M.lex_frame = C(NIL, M.lex_frame);
+  M.frame = C(NIL, M.frame);
 }
 static void parse_frame_shadow_append(Obj lit, Obj old_assoc) {
-  Obj old_shadow = C_CAR(M.lex_frame);
-  C_CAR(M.lex_frame) = T(lit, old_assoc, old_shadow);
+  Obj old_shadow = C_CAR(M.frame);
+  C_CAR(M.frame) = T(lit, old_assoc, old_shadow);
 }
 static void parse_frame_bind(Obj lit, unsigned rec) {
   LISPM_ASSERT(lispm_obj_is_literal(lit));
@@ -257,7 +257,7 @@ static void parse_frame_use(Obj lit) {
 }
 static Obj parse_frame_leave(void) {
   Obj shadow, bound = PARSE_SYM_BOUND(M.frame_depth--, 0);
-  C_UNPACK(M.lex_frame, shadow, M.lex_frame);
+  C_UNPACK(M.frame, shadow, M.frame);
 
   Obj captures = NIL;
   FOR_EACH_T(var, old_assoc, shadow) {
@@ -339,7 +339,7 @@ static Obj sema_let(Obj def) {
   }
   expr = sema(asgnsexpr[1]);
   FOR_EACH_T(name, val, asgns) { expr = sema_apply_lambda(T(parse_frame_leave(), C(name, NIL), expr), C(val, NIL)); }
-  return C(expr, NIL);
+  return expr;
 }
 static Obj sema_letrec(Obj def) {
   Obj asgnsexpr[2], args = NIL, exprs = NIL, nameval[2];
@@ -380,30 +380,36 @@ sema_ret_apply:
 }
 
 /* eval */
-static Obj evframe_get(Obj arg) {
-  LISPM_ASSERT(lispm_obj_is_literal(arg));
-  LISPM_EVAL_CHECK(htable_entry_is_rvalue(arg), arg, panic, "cannot use symbol as a value: ", arg);
-  Obj res = htable_entry_get_assoc(arg);
+static Obj evframe_get(Obj name) {
+  LISPM_ASSERT(lispm_obj_is_literal(name));
+  LISPM_EVAL_CHECK(htable_entry_is_rvalue(name), name, panic, "cannot use symbol as a value: ", name);
+  Obj res = htable_entry_get_assoc(name);
   if ((res & 15u) == 15u) res = S_1(res & ~1u);
-  LISPM_EVAL_CHECK(res != PARSE_SYM_UNBOUND, arg, unbound_symbol, arg);
+  LISPM_EVAL_CHECK(res != PARSE_SYM_UNBOUND, name, unbound_symbol, name);
   return res;
 }
-static Obj evframe_set(Obj frame, Obj name, Obj val) {
+static void evframe_set(Obj name, Obj val) {
   LISPM_ASSERT(lispm_obj_is_literal(name) && htable_entry_is_lvalue(name));
   Obj res = htable_entry_get_assoc(name);
   if ((res & 15u) == 15u && S_2(res & ~1u) == lispm_make_shortnum(M.frame_depth)) {
     S_1(res & ~1u) = val;
   } else {
-    frame = P(val, lispm_make_shortnum(M.frame_depth), res, name, frame);
-    htable_entry_set_assoc(name, frame | 15u);
+    M.frame = P(val, lispm_make_shortnum(M.frame_depth), res, name, M.frame);
+    htable_entry_set_assoc(name, M.frame | 15u);
   }
-  return frame;
 }
-static void evframe_restore(Obj frame) {
-  while (!lispm_obj_is_nil(frame)) {
-    htable_entry_set_assoc(S_4(frame), S_3(frame));
-    frame = S_NEXT(frame);
+static Obj evframe_enter(void) {
+  M.frame_depth++;
+  Obj old_frame = M.frame;
+  return M.frame = NIL, old_frame;
+}
+static void evframe_leave(Obj old_frame) {
+  while (!lispm_obj_is_nil(M.frame)) {
+    htable_entry_set_assoc(S_4(M.frame), S_3(M.frame));
+    M.frame = S_NEXT(M.frame);
   }
+  M.frame = old_frame;
+  M.frame_depth--;
 }
 static Obj eval(Obj e);
 static Obj evquote(Obj arg) { return lispm_return0(arg); }
@@ -416,62 +422,56 @@ static Obj evlambda(Obj lambda) {
 }
 static Obj evcon(Obj brans) {
   FOR_EACH_T(cond, act, brans) {
-    if (!lispm_obj_is_nil(eval(cond))) return C(act, NIL);
+    if (!lispm_obj_is_nil(eval(cond))) return act;
   }
   LISPM_EVAL_CHECK(0, NIL, panic, "condition branches exhausted", NIL);
 }
 static Obj evlet(Obj arg) { return arg; }
-static Obj evapply_lambda(Obj fn, Obj args) {
-  LISPM_ASSERT(lispm_obj_is_triplet(fn));
-  Obj captures, argf, body, ctx = NIL;
-  T_UNPACK(fn, captures, argf, body);
-  FOR_EACH_T(name, val, captures) { ctx = T(name, val, ctx); }
+static Obj evletrec(Obj arg) {
+  Obj lambda, exprs;
+  C_UNPACK(arg, lambda, exprs);
+  FOR_EACH_C(name, S_2(lambda)) { evframe_set(name, PARSE_SYM_UNBOUND); }
+  return sema_apply_lambda(lambda, exprs);
+}
+static Obj evapply(Obj expr) {
+  unsigned mark = M.sp - M.stack;
+  Obj es = gc(list_map(expr, eval), mark), f, args;
+  C_UNPACK(es, f, args);
+  if (lispm_obj_is_builtin_sym(f)) return es;
 
+  LISPM_EVAL_CHECK(lispm_obj_is_triplet(f), f, panic, "a function expected, got: ", f);
+  Obj captures, argf, body;
+  T_UNPACK(f, captures, argf, body);
+  FOR_EACH_T(name, val, captures) { evframe_set(name, val); }
   Obj argv = args, name, value;
   while (argf != NIL && argv != NIL) { /* arguments */
     C_UNPACK(argf, name, argf);
     C_UNPACK(argv, value, argv);
-    ctx = T(name, value, ctx);
+    evframe_set(name, value);
   }
-  LISPM_EVAL_CHECK(lispm_obj_is_nil(argf) && lispm_obj_is_nil(argv), fn, panic,
-                   "number of formal arguments does not match the number of "
-                   "passed arguments: ",
-                   fn);
-  return C(body, ctx);
-}
-static Obj evletrec(Obj arg) {
-  Obj lambda, exprs, ctx = NIL;
-  C_UNPACK(arg, lambda, exprs);
-  FOR_EACH_C(name, S_2(lambda)) { ctx = T(name, PARSE_SYM_UNBOUND, ctx); }
-  return C(sema_apply_lambda(lambda, exprs), ctx);
-}
-static Obj evapply(Obj expr) {
-  Obj es = list_map(expr, eval), f, args;
-  C_UNPACK(es, f, args);
-  if (lispm_obj_is_builtin_sym(f)) return C(es, NIL);
-  LISPM_EVAL_CHECK(lispm_obj_is_triplet(f), f, panic, "a function expected, got: ", f);
-  return evapply_lambda(f, args);
+  LISPM_EVAL_CHECK(lispm_obj_is_nil(argf) && lispm_obj_is_nil(argv), f, panic,
+                   "number of formal arguments does not match the number of passed arguments: ", f);
+  return body;
 }
 static Obj eval(Obj syn) {
   TRACE_NATIVE_STACK();
-  M.frame_depth++;
-  Obj frame = NIL, ctx = NIL, form, arg;
+  unsigned mark = M.sp - M.stack;
+  Obj old_frame = evframe_enter();
   for (;;) {
+    Obj form, arg;
     C_UNPACK(syn, form, arg);
-    if (lispm_obj_is_nil(form)) break;
+    if (lispm_obj_is_nil(form)) {
+      evframe_leave(old_frame);
+      return gc(arg, mark);
+    }
 
     LISPM_ASSERT(lispm_obj_is_builtin_sym(form));
     const struct LispmBuiltin *bi = lispm_builtins_start + lispm_builtin_sym_offs(form);
     LISPM_EVAL_CHECK(bi->eval, form, panic, "a function expected, got: ", form);
 
-    FOR_EACH_T(name, val, ctx) { frame = evframe_set(frame, name, val); }
-    /* do not attempt to gc frame parts, as they are referred to from htable! */
-    unsigned mark = M.sp - M.stack;
-    C_UNPACK(gc(bi->eval(arg), mark), syn, ctx);
+    /* do not attempt to gc here, as M.frame objects should never be moved! */
+    syn = bi->eval(arg);
   }
-  evframe_restore(frame);
-  M.frame_depth--;
-  return arg;
 }
 
 /* API */
@@ -492,7 +492,7 @@ void lispm_init(void) {
                            hence no value can have a zero offset into the strings table */
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
   M.htable_index_shift = __builtin_clz(M.htable_index_size) + 1;
-  M.lex_frame = NIL;
+  M.frame = NIL;
   M.frame_depth = 1;
 
   const unsigned bilen = lispm_builtins_end - lispm_builtins_start;
