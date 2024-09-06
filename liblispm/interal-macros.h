@@ -43,3 +43,9 @@
 #define FOR_EACH_T(a, b, seq)                                                                                          \
   for (LispmObj * cons_, it_ = (seq), a, b;                                                                            \
        !lispm_obj_is_nil(it_) && (cons_ = lispm_obj_unpack(it_), it_ = cons_[0], a = cons_[1], b = cons_[2], 1);)
+
+#define TRACE_NATIVE_STACK()                                                                                           \
+  do {                                                                                                                 \
+    LISPM_TRACE(stack_depth, LISPM_TRACE_STACK_NATIVE, lispm_rt_stack_depth(M.stack_bottom_mark));                     \
+    LISPM_EVAL_CHECK(lispm_rt_stack_depth(M.stack_bottom_mark) < M.stack_depth_limit, LISPM_SYM_NIL, oom_stack);       \
+  } while (0)

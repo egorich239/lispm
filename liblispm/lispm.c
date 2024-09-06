@@ -8,19 +8,16 @@
 /**/
 #include <liblispm/interal-macros.h>
 
-#define TRACE_NATIVE_STACK()                                                                                           \
-  do {                                                                                                                 \
-    LISPM_TRACE(stack_depth, LISPM_TRACE_STACK_NATIVE, lispm_rt_stack_depth(M.stack_bottom_mark));                     \
-    LISPM_EVAL_CHECK(lispm_rt_stack_depth(M.stack_bottom_mark) < M.stack_depth_limit, LISPM_SYM_NIL, oom_stack);       \
-  } while (0)
-
 extern struct LispmBuiltin lispm_builtins_start[];
 extern struct LispmBuiltin lispm_builtins_end[];
 
-const struct LispmBuiltin CORE[];
-#define BUILTIN_ERR_INDEX   (0)
-#define BUILTIN_QUOTE_INDEX (1)
-#define BUILTIN_APPLY_INDEX (2)
+const struct LispmBuiltin LISPM_SYN[];
+enum {
+  BUILTIN_ERR_INDEX = 0,
+  BUILTIN_APPLY_INDEX = 1,
+  BUILTIN_ASSOC_INDEX = 2,
+  BUILTIN_QUOTE_INDEX = 3,
+};
 
 /* builtins */
 Obj lispm_obj_from_builtin(const struct LispmBuiltin *bi) {
@@ -354,10 +351,12 @@ static Obj sema_apply(Obj syn) {
   return list_reverse_inplace(res);
 }
 static Obj sema(Obj syn) {
-  if (lispm_obj_is_atom(syn)) {
-    if (lispm_obj_is_literal(syn)) parse_frame_use(syn);
-    return syn;
+  if (lispm_obj_is_nil(syn) || lispm_obj_is_shortnum(syn)) return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_QUOTE_INDEX), syn);
+  if (lispm_obj_is_literal(syn)) {
+    parse_frame_use(syn);
+    return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_ASSOC_INDEX), syn);
   }
+
   TRACE_NATIVE_STACK();
 
   LISPM_ASSERT(lispm_obj_is_cons(syn));
@@ -368,14 +367,21 @@ static Obj sema(Obj syn) {
   Obj assoc = htable_entry_get_assoc(form);
   if (!lispm_obj_is_builtin_sym(assoc)) goto sema_ret_apply;
   const struct LispmBuiltin *bi = lispm_builtins_start + lispm_builtin_sym_offs(assoc);
-  if (bi && bi->sema) return C(form, bi->sema(args));
+  if (bi && bi->sema) return C(assoc, bi->sema(args));
 sema_ret_apply:
-  return C(M.stack_end[~BUILTIN_APPLY_INDEX], sema_apply(syn));
+  return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_APPLY_INDEX), sema_apply(syn));
 }
 
 /* eval */
 static Obj eval(Obj e);
 static Obj evquote(Obj arg) { return arg; }
+static Obj evassoc(Obj arg) {
+  LISPM_ASSERT(lispm_obj_is_literal(arg));
+  LISPM_EVAL_CHECK(htable_entry_is_rvalue(arg), arg, panic, "cannot use symbol as a value: ", arg);
+  Obj res = htable_entry_get_assoc(arg);
+  LISPM_EVAL_CHECK(res != PARSE_SYM_UNBOUND, arg, unbound_symbol, arg);
+  return res;
+}
 static Obj evlambda(Obj lambda) {
   Obj names, args, body, captures = LISPM_SYM_NIL;
   T_UNPACK(lambda, names, args, body);
@@ -448,18 +454,14 @@ static Obj evapply(Obj expr) {
   return res;
 }
 static Obj eval(Obj syn) {
-  if (lispm_obj_is_nil(syn) || lispm_obj_is_shortnum(syn)) return syn;
-  if (lispm_obj_is_literal(syn)) {
-    LISPM_EVAL_CHECK(htable_entry_is_rvalue(syn), syn, panic, "cannot use symbol as a value: ", syn);
-    Obj res = htable_entry_get_assoc(syn);
-    LISPM_EVAL_CHECK(res != PARSE_SYM_UNBOUND, syn, unbound_symbol, syn);
-    return res;
-  }
   TRACE_NATIVE_STACK();
   Obj form, args;
   C_UNPACK(syn, form, args);
 
-  const struct LispmBuiltin *bi = lispm_builtins_start + lispm_builtin_sym_offs(htable_entry_get_assoc(form));
+  LISPM_ASSERT(lispm_obj_is_builtin_sym(form));
+  const struct LispmBuiltin *bi = lispm_builtins_start + lispm_builtin_sym_offs(form);
+  LISPM_ASSERT(bi->eval);
+
   unsigned mark = M.sp - M.stack;
   Obj res = gc(bi->eval(args), mark);
   return res;
@@ -515,10 +517,11 @@ Obj lispm_exec(void) {
 
 static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
-const struct LispmBuiltin CORE[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
+const struct LispmBuiltin LISPM_SYN[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
     {"#err!"},
-    {"quote", evquote, sema_quote},
     {"(apply)", evapply, sema_apply},
+    {"(assoc)", evassoc},
+    {"quote", evquote, sema_quote},
     {"cond", evcon, sema_con},
     {"lambda", evlambda, sema_lambda},
     {"let", evlet, sema_let},
