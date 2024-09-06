@@ -65,19 +65,19 @@ static inline Obj *lispm_st_obj_alloc0(unsigned size) {
   return M.sp -= size;
 }
 Obj lispm_obj_alloc0(enum LispmStObjKind k) {
-  return lispm_make_st_obj(k, lispm_st_obj_alloc0(lispm_st_obj_st_size(k)) - M.stack);
+  return lispm_make_st_obj(k, lispm_st_obj_alloc0(lispm_obj_st_size(k)) - M.stack);
 }
-Obj *lispm_obj_unpack(Obj s) { return M.stack + lispm_st_obj_st_offs(s); }
+Obj *lispm_obj_unpack(Obj s) { return M.stack + lispm_obj_st_offs(s); }
 static Obj gc0(Obj s, unsigned high_mark, unsigned depth) {
   /* TODO: guarantee that gc0 over list (of atoms) is non-recursive */
-  if (!lispm_obj_is_st_obj(s) || lispm_st_obj_st_offs(s) >= high_mark) return s;
+  if (!lispm_obj_is_st_obj(s) || lispm_obj_st_offs(s) >= high_mark) return s;
   TRACE_NATIVE_STACK();
-  unsigned sz = lispm_st_obj_st_size(s);
-  Obj res = lispm_obj_alloc0(lispm_st_obj_kind(s));
+  unsigned sz = lispm_obj_st_size(s);
+  Obj res = lispm_obj_alloc0(lispm_obj_st_kind(s));
   Obj *t = M.sp, *f = lispm_obj_unpack(s) + sz;
   for (Obj *m = t + sz; m != t;)
     *--m = gc0(*--f, high_mark, depth);
-  return lispm_st_obj_offset_by(res, depth);
+  return lispm_obj_st_move(res, depth);
 }
 static Obj gc(Obj root, unsigned high_mark) {
   unsigned low_mark = M.sp - M.stack;

@@ -73,23 +73,27 @@ static inline LispmObj lispm_shortnum_mul(LispmObj p, LispmObj q, int *overflow)
 
 /* stack objects */
 static inline int lispm_obj_is_st_obj(LispmObj s) { return (s & 3u) == 2; }
+static inline int lispm_obj_is_st_obj_of(LispmObj s, enum LispmStObjKind k) { return (s & 15u) == k; }
 static inline LispmObj lispm_make_st_obj(enum LispmStObjKind k, unsigned st_offs) {
   LISPM_ASSERT(lispm_obj_is_st_obj(k));
   return (st_offs << 4) | k;
 }
-static inline unsigned lispm_st_obj_kind(LispmObj s) { return s & 15u; }
-static inline unsigned lispm_st_obj_st_size(LispmObj s) {
+static inline unsigned lispm_obj_st_size(LispmObj s) {
   LISPM_ASSERT(lispm_obj_is_st_obj(s));
   return ((s >> 2) & 3) + 2;
 }
-static inline unsigned lispm_st_obj_st_offs(LispmObj s) {
+static inline unsigned lispm_obj_st_kind(LispmObj s) {
+  LISPM_ASSERT(lispm_obj_is_st_obj(s));
+  return s & 15u;
+}
+static inline unsigned lispm_obj_st_offs(LispmObj s) {
   LISPM_ASSERT(lispm_obj_is_st_obj(s));
   return s >> 4;
 }
-static inline LispmObj lispm_st_obj_offset_by(LispmObj s, unsigned offs) {
+static inline LispmObj lispm_obj_st_move(LispmObj s, unsigned offs) {
   /* utility for gc */
-  LISPM_ASSERT(lispm_obj_is_st_obj(s));
-  return s + (offs << 4);
+  LISPM_ASSERT(lispm_obj_is_nil(s) || lispm_obj_is_st_obj(s));
+  return !lispm_obj_is_nil(s) ? s + (offs << 4) : s;
 }
 
 /* atoms */
@@ -97,13 +101,13 @@ static inline int lispm_obj_is_atom(LispmObj s) { return (s & 2u) == 0; }
 
 /* cons */
 static inline LispmObj lispm_make_cons(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_CONS, st_offs); }
-static inline int lispm_obj_is_cons(LispmObj s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_CONS; }
+static inline int lispm_obj_is_cons(LispmObj s) { return lispm_obj_is_st_obj_of(s, LISPM_ST_OBJ_CONS); }
 
 /* lambda */
 static inline LispmObj lispm_make_triplet(unsigned st_offs) { return lispm_make_st_obj(LISPM_ST_OBJ_TRIPLET, st_offs); }
-static inline int lispm_obj_is_triplet(LispmObj s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_TRIPLET; }
-static inline int lispm_obj_is_quad(LispmObj s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_QUAD; }
-static inline int lispm_obj_is_penta(LispmObj s) { return lispm_st_obj_kind(s) == LISPM_ST_OBJ_PENTA; }
+static inline int lispm_obj_is_triplet(LispmObj s) { return lispm_obj_is_st_obj_of(s, LISPM_ST_OBJ_TRIPLET); }
+static inline int lispm_obj_is_quad(LispmObj s) { return lispm_obj_is_st_obj_of(s, LISPM_ST_OBJ_QUAD); }
+static inline int lispm_obj_is_penta(LispmObj s) { return lispm_obj_is_st_obj_of(s, LISPM_ST_OBJ_PENTA); }
 
 /* specials, ctors are defined in macros, to be compile time consts */
 static inline int lispm_obj_is_special(LispmObj s) { return (s & 3u) == 3u; }
