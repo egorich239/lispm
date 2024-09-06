@@ -92,6 +92,7 @@ static Obj gc(Obj root, unsigned high_mark) {
   LISPM_TRACE(stack_depth, LISPM_TRACE_STACK_OBJECTS, M.stack_end - M.sp);
   while (lowest_mark < low_mark)
     M.stack[--high_mark] = M.stack[--low_mark];
+  M.sp = M.stack + high_mark;
   return root;
 }
 
@@ -462,7 +463,6 @@ static Obj eval(Obj syn) {
   TRACE_NATIVE_STACK();
   M.frame_depth++;
   Obj frame = NIL, ctx = NIL, form, arg;
-  unsigned low_mark = M.sp - M.stack;
   for (;;) {
     C_UNPACK(syn, form, arg);
     if (lispm_obj_is_nil(form)) break;
@@ -472,18 +472,20 @@ static Obj eval(Obj syn) {
     LISPM_EVAL_CHECK(bi->eval, form, panic, "a function expected, got: ", form);
 
     FOR_EACH_T(name, val, ctx) { frame = evframe_set(frame, name, val); }
-    unsigned mark = M.sp - M.stack;
     /* do not attempt to gc frame parts, as they are referred to from htable! */
-    Obj res = bi->eval(arg);
-    C_UNPACK(gc(res, mark), syn, ctx);
+    unsigned mark = M.sp - M.stack;
+    C_UNPACK(gc(bi->eval(arg), mark), syn, ctx);
   }
   evframe_restore(frame);
   M.frame_depth--;
-  return gc(arg, low_mark);
+  return arg;
 }
 
 /* API */
-Obj lispm_eval0(const char *pc, const char *pc_end) { return eval(sema(lispm_parse_quote0(pc, pc_end))); }
+Obj lispm_eval0(const char *pc, const char *pc_end) {
+  unsigned mark = M.sp - M.stack;
+  return gc(eval(sema(lispm_parse_quote0(pc, pc_end))), mark);
+}
 static inline int lispm_is_valid_result(Obj e) {
   return lispm_obj_is_nil(e) || lispm_obj_is_atom(e) || lispm_obj_is_cons(e);
 }
