@@ -112,13 +112,6 @@ static inline int lispm_obj_is_penta(LispmObj s) { return lispm_obj_is_st_obj_of
 /* specials, ctors are defined in macros, to be compile time consts */
 static inline int lispm_obj_is_special(LispmObj s) { return (s & 3u) == 3u; }
 
-/* builtin functions */
-#define LISPM_MAKE_BUILTIN_SYM(ft_offs) (((ft_offs) << 8) | 3u)
-static inline int lispm_obj_is_builtin_sym(LispmObj s) { return (s & 255u) == 3u; }
-static inline unsigned lispm_builtin_sym_offs(LispmObj s) {
-  LISPM_ASSERT(lispm_obj_is_builtin_sym(s));
-  return s >> 8;
-}
 
 /**
  * Returns object, corresponding to a given builtin.

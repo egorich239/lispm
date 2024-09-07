@@ -3,7 +3,7 @@
 #include <liblispm/obj.h>
 
 /**/
-#include <liblispm/interal-macros.h>
+#include <liblispm/internal-macros.h>
 
 LISPM_BUILTINS_EXT(LRT0_SYMS) = {{"#t"}, {"#modulo"}};
 #define BUILTIN_T      (LRT0_SYMS + 0)

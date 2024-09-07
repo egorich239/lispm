@@ -46,8 +46,8 @@
  * everything it ever observes on the stack is some kind of LispmObj.
  *
  *   Special symbols.
- * -    <N:28> 00 11: builtin objects at the offset N in builtins table;
- * -       ... xx 11: special values.
+ * -       ... xy 11: special values;
+ * -    <N:28> 11 11: builtin objects at the offset N in builtins table.
  */
 typedef unsigned LispmObj;
 
@@ -104,10 +104,10 @@ struct Lispm {
      offset in the table. */
   int htable_index_shift;
 
-  /* Stores information about the names defined and used in
-     the current lexical frame, used during semantic analysis. */
+  /* Information about the current lexical frame during semantic analysis
+     and runtime frame during evaluation. */
   LispmObj frame;
-  unsigned frame_depth;
+  unsigned frame_depth; /* shortnum during evaluation! */
 
   /* Marks the bottom of the native call stack at the beginning of lispm_exec() */
   void *stack_bottom_mark;
