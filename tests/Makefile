@@ -33,8 +33,8 @@ $(BUILD_DIR):
 	$(MAKE) -C ../liblispm $(DEPS)
 .PHONY: .make-deps
 
-$(BUILD_DIR)/%.data.txt: % | $(BUILD_DIR)
-	cat $</* >$@
+$(BUILD_DIR)/%.data.txt: %/* | $(BUILD_DIR)
+	cat $^ >$@
 
 $(BUILD_DIR)/%.data.o: $(BUILD_DIR)/%.data.txt
 	cd $(dir $<); $(LD) -r -b binary -z noexecstack -o $(@F) $(<F)

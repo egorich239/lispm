@@ -106,8 +106,8 @@ struct Lispm {
 
   /* Stores information about the names defined and used in
      the current lexical frame, used during semantic analysis. */
-  LispmObj lex_frame;
-  unsigned lex_frame_depth;
+  LispmObj frame;
+  unsigned frame_depth;
 
   /* Marks the bottom of the native call stack at the beginning of lispm_exec() */
   void *stack_bottom_mark;

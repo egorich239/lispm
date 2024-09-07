@@ -1,7 +1,4 @@
-(
-    ((x 3))
-)
-
+captures:free-var
 (let
     ((x 3))
     ((lambda () x))

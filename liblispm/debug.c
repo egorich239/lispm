@@ -73,11 +73,12 @@ void lispm_print_short(Obj sym) {
       lispm_print_short(sym);
     }
     fprintf(stderr, lispm_obj_is_nil(sym) ? ")" : "]");
+    return;
   }
   if (lispm_obj_is_st_obj(sym)) {
     Obj *cab = lispm_obj_unpack(sym);
     fprintf(stderr, "[");
-    for (int i = 0; i < lispm_st_obj_st_size(sym); ++i) {
+    for (int i = 0; i < lispm_obj_st_size(sym); ++i) {
       if (i) fprintf(stderr, " ");
       lispm_print_short(cab[i]);
     }
@@ -204,8 +205,8 @@ void lispm_dump(Obj sym) {
     indent += 2;
     same_line = 1;
     while (lispm_obj_is_cons(sym)) {
-      Obj car = stack[lispm_st_obj_st_offs(sym) + 1];
-      sym = stack[lispm_st_obj_st_offs(sym) + 0];
+      Obj car = stack[lispm_obj_st_offs(sym) + 1];
+      sym = stack[lispm_obj_st_offs(sym) + 0];
       lispm_dump(car);
     }
     if (sym != LISPM_SYM_NIL) lispm_dump(sym);
@@ -215,7 +216,7 @@ void lispm_dump(Obj sym) {
       fprintf(stderr, " ");
     fprintf(stderr, sym != LISPM_SYM_NIL ? "]\n" : ")\n");
   } else if (lispm_obj_is_triplet(sym)) {
-    unsigned offs = lispm_st_obj_st_offs(sym);
+    unsigned offs = lispm_obj_st_offs(sym);
     Obj cap = stack[offs], par = stack[offs + 1], body = stack[offs + 2];
     fprintf(stderr, "(lambda\n");
     indent += 2;
