@@ -433,8 +433,7 @@ static Obj evletrec(Obj arg) {
   return sema_apply_lambda(lambda, exprs);
 }
 static Obj evapply(Obj expr) {
-  unsigned mark = M.sp - M.stack;
-  Obj es = gc(list_map(expr, eval), mark), f, args;
+  Obj es = list_map(expr, eval), f, args;
   C_UNPACK(es, f, args);
   if (lispm_obj_is_builtin_sym(f)) return es;
 
