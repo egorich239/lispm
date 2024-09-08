@@ -9,7 +9,8 @@
 #include <stdio.h>
 
 /**/
-#include <liblispm/interal-macros.h>
+#include <liblispm/internal-macros.h>
+#include <liblispm/internal-obj.h>
 
 extern const struct LispmBuiltin lispm_builtins_start[];
 
@@ -44,8 +45,8 @@ void lispm_print_short(Obj sym) {
     fprintf(stderr, "%u", lispm_shortnum_val(sym));
     return;
   }
-  if (lispm_obj_is_builtin_sym(sym)) {
-    fprintf(stderr, "<builtin %s>", lispm_builtins_start[lispm_builtin_sym_offs(sym)].name);
+  if (lispm_obj_is_builtin(sym)) {
+    fprintf(stderr, "<builtin %s>", lispm_builtins_start[lispm_obj_builtin_offs(sym)].name);
     return;
   }
   if (lispm_obj_is_special(sym)) {

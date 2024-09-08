@@ -2,6 +2,11 @@
 
 #include <liblispm/types.h>
 
+enum LispmHtableFlags {
+  LISPM_HTABLE_LITERAL_NOT_RVALUE = 1u,
+  LISPM_HTABLE_LITERAL_LVALUE = 2u,
+};
+
 /*
  * Arguments are provided as a SYM_NIL-terminated CONS-sequence.
  *
@@ -18,6 +23,7 @@ struct __attribute__((aligned(16))) LispmBuiltin {
   const char *name;
   LispmObj (*eval)(LispmObj args);
   LispmObj (*sema)(LispmObj args);
+  enum LispmHtableFlags flags;
 };
 /* Convenience macro to implement extensions */
 #define LISPM_BUILTINS_EXT(name)                                                                                       \

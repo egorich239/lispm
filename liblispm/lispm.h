@@ -9,6 +9,9 @@
 enum {
   /* The bottom of the stack is used to communicate information about errors. */
   LISPM_STACK_BOTTOM_OFFSET = 8u,
+
+  /* The limit on the length of a builtin name. */
+  LISPM_BUILTIN_NAME_LIMIT = 15u,
 };
 
 /* API */
@@ -31,9 +34,9 @@ static inline int lispm_is_valid_config(void) {
 /**
  * Initializes the state of lispm object.
  *
- * TODO: This function currently can throw, which is sad because this leads to segfault.
+ * Returns 1 on success, 0 otherwise.
  */
-void lispm_init(void);
+int lispm_init(void);
 
 /**
  * Parses and executes the program, located at `lispm.pc`.
