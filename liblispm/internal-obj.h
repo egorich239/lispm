@@ -20,6 +20,17 @@ enum {
   LISPM_TOK_QUOTE = (((unsigned char)'\'') << 8) | 19u,
 };
 
+/* hash table */
+enum {
+  /* symbols */
+  LISPM_HTABLE_EXHAUSTED = (0u << 8) | 35u,
+  LISPM_HTABLE_NOT_FOUND = (1u << 8) | 35u,
+
+  /* htable_ensure flags */
+  LISPM_HTABLE_ENSURE_FORBID_INSERT = 4u,
+};
+static inline int lispm_obj_is_htable_error(LispmObj o) { return (o & 255u) == 35u; }
+
 /* frame depth handling */
 static inline int lispm_is_frame_depth(LispmObj o) {
   return lispm_obj_is_shortnum(o) && 0 < lispm_shortnum_val(o) && lispm_shortnum_val(o) < ~(~0u >> 4);

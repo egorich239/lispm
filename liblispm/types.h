@@ -25,6 +25,8 @@
  * -     <NUM:30> 01: short inline unsigned;
  * - <OFFS:28> ss 10: stack pointer, the object consume '2+ss' consequtive words on stack,
  *                    starting with <OFFS>;
+ * TODO: making OFFS measure from M.stack_end (!) instead of M.stack together with snapshotting
+ *       will simplify the scenario "retry this program from this snapshot on a larger stack".
  *   Stack objects:
  * -    <CONS> 00 10: pair car, cdr;
  * -  <TRIPLE> 01 10: triplet, mostly used for lambdas; it is not recommended
