@@ -357,11 +357,11 @@ static Obj sema_letrec(Obj def) {
   return C(T(captures, args, expr), vals);
 }
 static Obj sema(Obj syn) {
-  if (lispm_obj_is_nil(syn) || lispm_obj_is_shortnum(syn)) return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_QUOTE_INDEX), syn);
   if (lispm_obj_is_literal(syn)) {
     lex_frame_use(syn);
     return C(LISPM_MAKE_BUILTIN_SYM(BUILTIN_ASSOC_INDEX), syn);
   }
+  if (lispm_obj_is_atom(syn)) return lispm_return0(syn);
 
   TRACE_NATIVE_STACK();
 
