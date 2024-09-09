@@ -82,14 +82,11 @@ struct Lispm {
   /* Location of the VM strings storage. */
   char *strings, *strings_end;
 
-  /* Location of the VM program page. */
-  const char *program, *program_end;
-  /* Pointer to the next lexeme, must point to the beginning
-     of the program begore lispm_exec(). */
-  const char *pc;
-
   /* Hash table storage. Must have a power-of-two size. */
   unsigned *htable, *htable_end;
+
+  /* Program location. Interpreter moves `pc` during parsing. */
+  const char *pc, *pc_end;
 
   /* Native call stack depth limit. */
   int stack_depth_limit;

@@ -31,9 +31,8 @@ Obj lispm_obj_from_builtin(const struct LispmBuiltin *bi) {
 /* error reporting */
 __attribute__((noreturn)) void lispm_panic0(Obj ctx) {
   LISPM_ASSERT(M.stack);
-  M.stack[0] = M.stack_end[~BUILTIN_ERR_INDEX];
   M.stack[1] = ctx;
-  lispm_rt_throw();
+  lispm_rt_throw(M.stack_end[~BUILTIN_ERR_INDEX]);
 }
 Obj lispm_return0(Obj obj) { return C(NIL, obj); }
 
@@ -167,7 +166,7 @@ static Obj lex(void) {
   char *tp = M.tp;
   unsigned token_val = 0, flags = LISPM_HTABLE_LITERAL_LVALUE;
   unsigned fc = 0, c, cat;
-  for (; tp + 4 < M.strings_end && M.pc < M.program_end; ++M.pc) {
+  for (; tp + 4 < M.strings_end && M.pc < M.pc_end; ++M.pc) {
     c = (unsigned char)*M.pc;
     if (c >= 128) goto lex_fail;
     cat = LEX_CHAR_CAT(c);
@@ -273,14 +272,9 @@ static Obj parse(Obj tok) {
     res = C(parse(tok), res);
   return list_reverse_inplace(res, 0);
 }
-Obj lispm_parse_quote0(const char *pc, const char *pc_end) {
-  LISPM_ASSERT(M.program <= pc && pc <= pc_end && pc_end <= M.program_end);
-  const char *old_pc_end = M.program_end;
-  M.pc = pc;
-  M.program_end = pc_end;
-  Obj res = parse(lex());
-  M.program_end = old_pc_end;
-  return res;
+Obj lispm_parse_quote0(void) {
+  LISPM_ASSERT(M.pc <= M.pc_end);
+  return parse(lex());
 }
 
 static Obj sema_apply_lambda(Obj proto, Obj args) {
@@ -473,9 +467,9 @@ static Obj eval(Obj syn) {
 }
 
 /* API */
-Obj lispm_eval0(const char *pc, const char *pc_end) {
+Obj lispm_eval0(void) {
   unsigned mark = M.sp - M.stack;
-  Obj program = frame_depth_guard(sema, lispm_parse_quote0(pc, pc_end));
+  Obj program = frame_depth_guard(sema, lispm_parse_quote0());
   Obj res = frame_depth_guard(eval, program);
   return gc(res, mark);
 }
@@ -508,16 +502,13 @@ int lispm_init(void) {
   return 1;
 }
 
-static void lispm_main(void) {
-  M.stack_bottom_mark = lispm_rt_stack_mark();
-  M.stack[0] = lispm_eval0(M.pc, M.program_end);
-}
-
-Obj lispm_exec(void) {
+static Obj trycatch(unsigned mode) {
   LISPM_ASSERT(M.htable_index_size != 0); /* check that the machine has been initialized */
-  lispm_rt_try(lispm_main);
-  return M.stack[0];
+  M.stack_bottom_mark = lispm_rt_stack_mark();
+  return M.stack[0] = lispm_rt_try(mode == 1 ? lispm_parse_quote0 : lispm_eval0);
 }
+Obj lispm_parse_quote(void) { return trycatch(1); }
+Obj lispm_eval(void) { return trycatch(2); }
 
 static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
