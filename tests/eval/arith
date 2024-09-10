@@ -19,7 +19,7 @@ arith:sum-oflow
 #err!
 
 arith:sum-mod2
-(+ 600000000 600000000 #modulo)
+(+ 600000000 600000000 :modulo)
 126258176
 
 arith:mul
@@ -27,7 +27,7 @@ arith:mul
 6
 
 arith:mul-mod2
-(* 600000000 600000000 #modulo)
+(* 600000000 600000000 :modulo)
 925106176
 
 arith:mul-oflow
@@ -39,7 +39,7 @@ arith:sub
 43
 
 arith:sub-mod2
-(- 1 2 #modulo)
+(- 1 2 :modulo)
 1073741823
 
 arith:sub-oflow

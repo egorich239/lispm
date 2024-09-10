@@ -3,8 +3,23 @@
 #include <liblispm/types.h>
 
 enum LispmHtableFlags {
+  /**
+   * Forbids using the symbol as a value.
+   * Mainly used for syntactic forms.
+   */
   LISPM_HTABLE_LITERAL_NOT_RVALUE = 1u,
+
+  /**
+   * Allows shadowing the value in a nested scope.
+   * Mainly unset for builtin symbols, s.t. they cannot be redefined.
+   */
   LISPM_HTABLE_LITERAL_LVALUE = 2u,
+
+  /**
+   * Links the value of the literal to itself.
+   * Mainly useful for `:keywords` and special symbols such as `#t`.
+   */
+  LISPM_HTABLE_LITERAL_SELFREF = 4u,
 };
 
 /*

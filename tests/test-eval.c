@@ -32,9 +32,8 @@ struct Lispm lispm = {
     .tp = strings,
 
     /*program*/
-    .program = _binary_eval_data_txt_start,
-    .program_end = _binary_eval_data_txt_end,
     .pc = _binary_eval_data_txt_start,
+    .pc_end = _binary_eval_data_txt_end,
 
     /*htable*/
     .htable = htable,
@@ -64,14 +63,14 @@ int main(int argc, char *argv[]) {
   lispm_trace_stack();
   lispm_trace.lex_error = lex_error;
   lispm_trace.parse_error = parse_error;
-  for (; M.pc < M.program_end; ++M.pc) {
+  for (; M.pc < M.pc_end; ++M.pc) {
     if (*M.pc == ';') comment = 1;
     if (comment) {
       if (*M.pc == '\n') comment = 0;
       continue;
     }
     if (*M.pc <= ' ') continue;
-    LispmObj testname = lispm_parse_quote0(M.pc, M.program_end);
+    LispmObj testname = lispm_parse_quote();
     if (!lispm_obj_is_literal(testname)) {
       fprintf(stderr, "Expected a test name literal, got: ");
       lispm_print_short(testname);
@@ -81,9 +80,9 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "\n");
     M.stack_bottom_mark = lispm_rt_stack_mark();
     lispm_reset_runtime_stats();
-    LispmObj actual = lispm_exec();
+    LispmObj actual = lispm_eval();
     lispm_print_runtime_stats();
-    LispmObj expected = lispm_parse_quote0(M.pc, M.program_end);
+    LispmObj expected = lispm_parse_quote();
 
     lispm_print_short(testname);
     if (sym_equal(actual, expected)) {

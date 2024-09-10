@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lispm.h"
 #include <liblispm/obj.h>
 #include <liblispm/trace.h>
 #include <liblispm/types.h>
@@ -27,7 +28,7 @@ enum {
   LISPM_HTABLE_NOT_FOUND = (1u << 8) | 35u,
 
   /* htable_ensure flags */
-  LISPM_HTABLE_ENSURE_FORBID_INSERT = 4u,
+  LISPM_HTABLE_FORBID_INSERT = 8u,
 };
 static inline int lispm_obj_is_htable_error(LispmObj o) { return (o & 255u) == 35u; }
 
@@ -76,4 +77,17 @@ static inline int lispm_obj_is_assoc(LispmObj o) { return (o & 15u) == LISPM_OBJ
 static inline int lispm_obj_assoc_deref(LispmObj o) {
   LISPM_ASSERT(lispm_obj_is_assoc(o));
   return o ^ 1;
+}
+
+/* gc */
+static inline LispmObj lispm_gc_bound(unsigned mark) { return lispm_make_st_obj(LISPM_ST_OBJ_CONS, mark); }
+static inline unsigned lispm_gc_offset(unsigned low_mark, unsigned high_mark) {
+  /* must be in sync with the representation of stack objects,
+     and be equal to `lispm_gc_bound(CONS, high_mark) - lispm_gc_bound(CONS, low_mark)` */
+  return (high_mark - low_mark) << 4;
+}
+static inline LispmObj lispm_gc_move(LispmObj s, unsigned gc_offset) {
+  /* utility for gc */
+  LISPM_ASSERT(lispm_obj_is_nil(s) || lispm_obj_is_st_obj(s));
+  return !lispm_obj_is_nil(s) ? s + gc_offset : s;
 }
