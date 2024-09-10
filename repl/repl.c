@@ -5,6 +5,7 @@
 #include <liblispm/types.h>
 
 #include <readline/readline.h>
+#include <stdlib.h>
 #include <string.h>
 
 extern const char _binary_main_lispm_start[];
@@ -60,6 +61,7 @@ struct Lispm lispm = {
 
 static const char *text = 0;
 static LispmObj io_readline(LispmObj args) {
+  if (text) free((void *)text);
   text = readline("> ");
   printf("\n");
   return lispm_return0(text ? lispm_make_shortnum(1) : LISPM_SYM_NIL);
