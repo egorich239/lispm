@@ -9,9 +9,6 @@
 enum {
   /* The bottom of the stack is used to communicate information about errors. */
   LISPM_STACK_BOTTOM_OFFSET = 8u,
-
-  /* The limit on the length of a builtin name. */
-  LISPM_BUILTIN_NAME_LIMIT = 15u,
 };
 
 /* API */

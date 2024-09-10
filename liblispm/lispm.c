@@ -489,10 +489,10 @@ int lispm_init(void) {
   if (M.sp - (M.stack + LISPM_STACK_BOTTOM_OFFSET) < bilen) return 0;
   for (int i = 0; i < bilen; ++i) {
     const struct LispmBuiltin *bi = lispm_builtins_start + i;
-    const char *n = bi->name;
+    const char *n = bi->name, *ns = n;
     if (!n) continue;
-    if (M.strings_end - M.tp < LISPM_BUILTIN_NAME_LIMIT + 5) return 0;
-    if (__builtin_strncpy(M.tp, n, LISPM_BUILTIN_NAME_LIMIT + 1)[LISPM_BUILTIN_NAME_LIMIT]) return 0;
+    for (char *nt = M.tp; (*nt++ = *ns++);)
+      if (nt + 4 == M.strings_end) return 0;
     Obj s = htable_ensure(bi->flags);
     if (lispm_obj_is_htable_error(s)) return 0;
     /* set_assoc below asserts, because the value is marked not lvalue */
