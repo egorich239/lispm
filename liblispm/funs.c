@@ -6,7 +6,7 @@
 #include <liblispm/internal-macros.h>
 
 LISPM_BUILTINS_EXT(LRT0_SYMS) = {
-    {"#t", 0, 0, LISPM_HTABLE_LITERAL_SELFREF},
+    {"#t", 0, 0, LISPM_BUILTIN_LITERAL_SELFREF},
     {":modulo"}
 };
 #define BUILTIN_T      (LRT0_SYMS + 0)

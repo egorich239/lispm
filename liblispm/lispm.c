@@ -106,11 +106,11 @@ static inline unsigned htable_entry_key(Obj s) { return M.htable[lispm_literal_h
 static inline int htable_entry_key_payload(unsigned key) { return key >> 2; }
 static inline int htable_entry_is_lvalue(Obj s) {
   LISPM_ASSERT(lispm_obj_is_literal(s));
-  return htable_entry_key(s) & LISPM_HTABLE_LITERAL_LVALUE;
+  return htable_entry_key(s) & LISPM_BUILTIN_LITERAL_LVALUE;
 }
 static inline int htable_entry_is_rvalue(Obj s) {
   LISPM_ASSERT(lispm_obj_is_literal(s));
-  return !(htable_entry_key(s) & LISPM_HTABLE_LITERAL_NOT_RVALUE);
+  return !(htable_entry_key(s) & LISPM_BUILTIN_LITERAL_NOT_RVALUE);
 }
 static inline int htable_entry_key_streq(unsigned key) {
   const char *h = M.strings + htable_entry_key_payload(key);
@@ -148,9 +148,9 @@ static Obj htable_ensure(unsigned flags, LispmObj value) {
 
 ensure_insert:
   if (flags & LISPM_HTABLE_FORBID_INSERT) return LISPM_HTABLE_NOT_FOUND;
-  if (*M.tp == ':') flags = (flags & ~LISPM_HTABLE_LITERAL_LVALUE) | LISPM_HTABLE_LITERAL_SELFREF;
+  if (*M.tp == ':') flags = (flags & ~LISPM_BUILTIN_LITERAL_LVALUE) | LISPM_BUILTIN_LITERAL_SELFREF;
   entry[0] = ((M.tp - M.strings) << 2) | (flags & 3u);
-  entry[1] = (flags & LISPM_HTABLE_LITERAL_SELFREF) ? lit : value;
+  entry[1] = (flags & LISPM_BUILTIN_LITERAL_SELFREF) ? lit : value;
   while (*M.tp++) {}
   while ((++M.tp - M.strings) & 3) {}
   return lit;
@@ -164,7 +164,7 @@ static Obj lex(void) {
   _Static_assert(LEX_IS_ATOM_SYM(S_ATOM), "S_ATOM must match the category");
   _Static_assert(LEX_IS_DIGIT(S_NUM), "S_NUM must match the category");
   char *tp = M.tp;
-  unsigned token_val = 0, flags = LISPM_HTABLE_LITERAL_LVALUE;
+  unsigned token_val = 0, flags = LISPM_BUILTIN_LITERAL_LVALUE;
   unsigned fc = 0, c, cat;
   for (; tp + 4 < M.strings_end && M.pc < M.pc_end; ++M.pc) {
     c = (unsigned char)*M.pc;
@@ -359,7 +359,7 @@ static Obj sema(Obj syn) {
   Obj assoc = htable_entry_get_assoc(form);
   if (!lispm_obj_is_builtin(assoc)) goto sema_ret_apply;
   const struct LispmBuiltin *bi = lispm_builtins_start + lispm_obj_builtin_offs(assoc);
-  if (bi && bi->sema) return C(assoc, bi->sema(args));
+  if (bi && (bi->flags & LISPM_BUILTIN_SYNTAX)) return C(assoc, bi->aux(args));
 sema_ret_apply:
   return C(lispm_make_builtin(BUILTIN_APPLY_INDEX), list_map(syn, sema));
 }
@@ -511,13 +511,13 @@ Obj lispm_eval(void) { return trycatch(2); }
 static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
 const struct LispmBuiltin LISPM_SYN[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
-    {"#err!", 0, 0, LISPM_HTABLE_LITERAL_SELFREF},
-    {"(apply)", evapply, 0, LISPM_HTABLE_LITERAL_NOT_RVALUE},
-    {"(assoc)", evassoc, 0, LISPM_HTABLE_LITERAL_NOT_RVALUE},
-    {"quote", evquote, sema_quote, LISPM_HTABLE_LITERAL_NOT_RVALUE},
-    {"lambda", evlambda, sema_lambda, LISPM_HTABLE_LITERAL_NOT_RVALUE},
-    {"let", evlet, sema_let, LISPM_HTABLE_LITERAL_NOT_RVALUE},
-    {"letrec", evletrec, sema_letrec, LISPM_HTABLE_LITERAL_NOT_RVALUE},
-    {"cond", evcon, sema_con, LISPM_HTABLE_LITERAL_NOT_RVALUE},
+    {"#err!", 0, 0, LISPM_BUILTIN_LITERAL_SELFREF},
+    {"(apply)", evapply, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
+    {"(assoc)", evassoc, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
+    {"quote", evquote, sema_quote, LISPM_BUILTIN_SYNTAX | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
+    {"lambda", evlambda, sema_lambda, LISPM_BUILTIN_SYNTAX | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
+    {"let", evlet, sema_let, LISPM_BUILTIN_SYNTAX | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
+    {"letrec", evletrec, sema_letrec, LISPM_BUILTIN_SYNTAX | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
+    {"cond", evcon, sema_con, LISPM_BUILTIN_SYNTAX | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
     {"panic!", PANIC},
 };
