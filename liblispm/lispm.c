@@ -20,9 +20,6 @@ enum {
   BUILTIN_LAMBDA_INDEX = 5,
 };
 
-/* builtins */
-Obj lispm_obj_from_builtin(const struct LispmBuiltin *bi) { return M.stack_end[~lispm_intrinsic_builtin_offset(bi)]; }
-
 /* error reporting */
 __attribute__((noreturn)) void lispm_panic0(Obj ctx) {
   LISPM_ASSERT(M.stack);
@@ -78,7 +75,7 @@ static Obj gc0(Obj s, LispmObj gc_bound, unsigned gc_offset) {
     dest = M.sp, dest[0] = tail, tail = new_tail;
     for (unsigned p = sz - 1; p; --p)
       dest[p] = gc0(src[p], gc_bound, gc_offset);
-    s = src[0];
+    s = src[0], src[0] = NIL;
   }
   if (lispm_obj_is_nil(tail)) return s;
   Obj res = list_reverse_inplace(tail, gc_offset);
@@ -90,6 +87,11 @@ static Obj gc(Obj root) {
   root = gc0(root, lispm_gc_bound(high_mark), lispm_gc_offset(low_mark, high_mark));
   const unsigned lowest_mark = gc_mark();
   LISPM_TRACE(stack_depth, LISPM_TRACE_STACK_OBJECTS, M.stack_end - M.sp);
+  for (unsigned o = low_mark; o < high_mark; ++o) {
+    if (!lispm_obj_is_builtin(M.stack[o])) continue;
+    const struct LispmBuiltin *bi = lispm_intrinsic_builtin_at(lispm_obj_builtin_offs(M.stack[o]));
+    if (bi && (bi->flags & LISPM_BUILTIN_TYPETAG)) bi->aux(lispm_make_cons(o));
+  }
   while (lowest_mark < low_mark)
     M.stack[--high_mark] = M.stack[--low_mark];
   M.sp = M.stack + high_mark;
@@ -151,6 +153,10 @@ ensure_insert:
   M.tp -= (M.tp - M.strings) & 3u;
   return lit;
 }
+
+/* builtins */
+Obj lispm_builtin_literal(const struct LispmBuiltin *bi) { return M.stack_end[~lispm_intrinsic_builtin_offset(bi)]; }
+Obj lispm_builtin_value(const struct LispmBuiltin *bi) { return htable_entry_get_assoc(lispm_builtin_literal(bi)); }
 
 /* lexer */
 #include <liblispm/lexer.inc.h>
@@ -435,6 +441,7 @@ static Obj eval(Obj syn) {
 
     LISPM_ASSERT(lispm_obj_is_builtin(form));
     const struct LispmBuiltin *bi = lispm_intrinsic_builtin_at(lispm_obj_builtin_offs(form));
+    LISPM_ASSERT(bi && "builtin expected");
     LISPM_EVAL_CHECK(bi->eval, form, panic, "a function expected, got: ", form);
     syn = bi->eval(arg);
   }

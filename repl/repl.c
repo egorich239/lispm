@@ -2,6 +2,7 @@
 #include <liblispm/debug.h>
 #include <liblispm/lispm.h>
 #include <liblispm/obj.h>
+#include <liblispm/trace.h>
 #include <liblispm/types.h>
 
 #include <readline/readline.h>
@@ -59,16 +60,47 @@ struct Lispm lispm = {
     .stack_depth_limit = 16384u,
 };
 
-static const char *text = 0;
+enum { LINES_CACHE_SIZE = 2 };
+static const char *lines_cache[LINES_CACHE_SIZE];
+
+static LispmObj eval(LispmObj args);
+static LispmObj io_readline(LispmObj args);
+static LispmObj io_line_free(LispmObj args);
+static LispmObj io_print(LispmObj args);
+
+LISPM_BUILTINS_EXT(IO) = {
+    {"#:io-line", 0, io_line_free, LISPM_BUILTIN_TYPETAG},
+    {"#io:readline", io_readline},
+    {"#eval", eval},
+    {"#io:print", io_print},
+};
+
 static LispmObj io_readline(LispmObj args) {
-  if (text) free((void *)text);
-  text = readline("> ");
+  int c = 0;
+  for (; c < LINES_CACHE_SIZE; ++c)
+    if (!lines_cache[c]) break;
+  LISPM_EVAL_CHECK(c != LINES_CACHE_SIZE, args, panic, "lines cache memory exhausted: ", args);
+  lines_cache[c] = readline("> ");
   printf("\n");
-  return lispm_return0(text ? lispm_make_shortnum(1) : LISPM_SYM_NIL);
+  return lispm_return0(lines_cache[c] ? lispm_cons_alloc(lispm_make_shortnum(c), lispm_builtin_value(IO + 0))
+                                      : LISPM_SYM_NIL);
+}
+static LispmObj io_line_free(LispmObj args) {
+  LispmObj *o = lispm_obj_unpack(args);
+  LISPM_ASSERT(o[0] == lispm_builtin_value(IO + 0));
+  unsigned offs = lispm_shortnum_val(o[1]);
+  fprintf(stderr, "free'd the line: %s\n", lines_cache[offs]);
+  free((void *)lines_cache[offs]);
+  lines_cache[offs] = 0;
+  return lispm_return0(LISPM_SYM_NIL);
 }
 static LispmObj eval(LispmObj args) {
-  lispm.pc = text;
-  lispm.pc_end = text + strlen(text);
+  LispmObj line;
+  LISPM_EVAL_CHECK(lispm_list_scan(&line, args, 1) == 1, args, panic, "expected one line argument, got: ", args);
+  LISPM_EVAL_CHECK(lispm_obj_is_cons(line) && lispm_obj_unpack(line)[0] == lispm_builtin_value(IO + 0), args, panic,
+                   "expected one line argument, got: ", args);
+  lispm.pc = lines_cache[lispm_shortnum_val(lispm_obj_unpack(line)[1])];
+  lispm.pc_end = lispm.pc + strlen(lispm.pc);
   return lispm_return0(lispm_eval0());
 }
 static LispmObj io_print(LispmObj args) {
@@ -76,12 +108,6 @@ static LispmObj io_print(LispmObj args) {
   printf("\n");
   return lispm_return0(LISPM_SYM_NIL);
 }
-
-LISPM_BUILTINS_EXT(IO) = {
-    {"#io:readline", io_readline},
-    {"#eval",        eval       },
-    {"#io:print",    io_print   }
-};
 
 int main() {
   rl_bind_key('\n', handle_nl);
