@@ -5,7 +5,10 @@
 /**/
 #include <liblispm/internal-macros.h>
 
-LISPM_BUILTINS_EXT(LRT0_SYMS) = {{"#t"}, {"#modulo"}};
+LISPM_BUILTINS_EXT(LRT0_SYMS) = {
+    {"#t", 0, 0, LISPM_HTABLE_LITERAL_SELFREF},
+    {":modulo"}
+};
 #define BUILTIN_T      (LRT0_SYMS + 0)
 #define BUILTIN_MODULO (LRT0_SYMS + 1)
 
@@ -41,7 +44,7 @@ static int binop_unpack(Obj args, int arith, Obj *p, Obj *q) {
   LISPM_EVAL_CHECK(((argc == 2) || (arith && argc == 3)) && lispm_obj_is_shortnum(pqm[0]) &&
                        lispm_obj_is_shortnum(pqm[1]) &&
                        (lispm_obj_is_nil(pqm[2]) || lispm_obj_from_builtin(BUILTIN_MODULO) == pqm[2]),
-                   args, panic, "p, q[, #modulo] expected, got: ", args);
+                   args, panic, "p, q[, :modulo] expected, got: ", args);
   *p = pqm[0], *q = pqm[1];
   return lispm_obj_from_builtin(BUILTIN_MODULO) == pqm[2];
 }

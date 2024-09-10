@@ -134,7 +134,7 @@ static unsigned htable_hashf(unsigned seed) {
   LISPM_ASSERT(hash < M.htable_index_size);
   return hash;
 }
-static Obj htable_ensure(unsigned flags) {
+static Obj htable_ensure(unsigned flags, LispmObj value) {
   unsigned offset = 5381, *entry;
   Obj lit;
   for (int attempt = 0; attempt < LISPM_CONFIG_HTABLE_LOOKUP_LIMIT; ++attempt) {
@@ -147,14 +147,13 @@ static Obj htable_ensure(unsigned flags) {
   return LISPM_HTABLE_EXHAUSTED;
 
 ensure_insert:
-  if (flags & LISPM_HTABLE_ENSURE_FORBID_INSERT) return LISPM_HTABLE_NOT_FOUND;
-  unsigned selfref = (*M.tp == '#' || *M.tp == ':') ? 1 : 0;
-  if (selfref) flags &= ~LISPM_HTABLE_LITERAL_LVALUE;
-  entry[0] = ((M.tp - M.strings) << 2) | flags;
-  entry[1] = selfref ? lit : LISPM_LEX_UNBOUND;
+  if (flags & LISPM_HTABLE_FORBID_INSERT) return LISPM_HTABLE_NOT_FOUND;
+  if (*M.tp == ':') flags = (flags & ~LISPM_HTABLE_LITERAL_LVALUE) | LISPM_HTABLE_LITERAL_SELFREF;
+  entry[0] = ((M.tp - M.strings) << 2) | (flags & 3u);
+  entry[1] = (flags & LISPM_HTABLE_LITERAL_SELFREF) ? lit : value;
   while (*M.tp++) {}
   while ((++M.tp - M.strings) & 3) {}
-  return lit ^ selfref;
+  return lit;
 }
 
 /* lexer */
@@ -179,7 +178,7 @@ static Obj lex(void) {
         continue;
       } else if (c == '#') {
         *tp++ = c, state = S_ATOM;
-        flags ^= LISPM_HTABLE_ENSURE_FORBID_INSERT;
+        flags ^= LISPM_HTABLE_FORBID_INSERT;
         continue;
       }
       if (LEX_IS_TOK(cat)) return ++M.pc, lispm_make_token(c);
@@ -214,7 +213,7 @@ lex_fail:
   LISPM_EVAL_CHECK(0, NIL, lex_error);
 lex_atom:
   *tp++ = 0;
-  Obj res = htable_ensure(flags) & ~1u;
+  Obj res = htable_ensure(flags, LISPM_LEX_UNBOUND);
   LISPM_EVAL_CHECK(!lispm_obj_is_htable_error(res), res, panic, "could not insert symbol: ", res);
   return res;
 lex_num:
@@ -493,11 +492,9 @@ int lispm_init(void) {
     if (!n) continue;
     for (char *nt = M.tp; (*nt++ = *ns++);)
       if (nt + 4 == M.strings_end) return 0;
-    Obj s = htable_ensure(bi->flags);
+    Obj s = htable_ensure(bi->flags, lispm_make_builtin(i));
     if (lispm_obj_is_htable_error(s)) return 0;
-    /* set_assoc below asserts, because the value is marked not lvalue */
-    if (!(s & 1u)) M.htable[lispm_literal_ht_offs(s) + 1] = lispm_make_builtin(i);
-    M.stack_end[~i] = s & ~1u;
+    M.stack_end[~i] = s;
   }
   M.sp -= bilen;
   return 1;
@@ -514,7 +511,7 @@ Obj lispm_eval(void) { return trycatch(2); }
 static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
 const struct LispmBuiltin LISPM_SYN[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
-    {"#err!"},
+    {"#err!", 0, 0, LISPM_HTABLE_LITERAL_SELFREF},
     {"(apply)", evapply, 0, LISPM_HTABLE_LITERAL_NOT_RVALUE},
     {"(assoc)", evassoc, 0, LISPM_HTABLE_LITERAL_NOT_RVALUE},
     {"quote", evquote, sema_quote, LISPM_HTABLE_LITERAL_NOT_RVALUE},
