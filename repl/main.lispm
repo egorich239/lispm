@@ -1,0 +1,11 @@
+(letrec
+    (
+        (it (lambda (ln) (cond 
+            (ln (let (
+                (res (#eval ln))
+                (_   (#io:print res))
+                ) (it (#io:readline))))
+            (#t ()))))
+    )
+    (it (#io:readline))
+)
