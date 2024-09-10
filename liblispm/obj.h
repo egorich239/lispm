@@ -90,11 +90,6 @@ static inline unsigned lispm_obj_st_offs(LispmObj s) {
   LISPM_ASSERT(lispm_obj_is_st_obj(s));
   return s >> 4;
 }
-static inline LispmObj lispm_obj_st_move(LispmObj s, unsigned offs) {
-  /* utility for gc */
-  LISPM_ASSERT(lispm_obj_is_nil(s) || lispm_obj_is_st_obj(s));
-  return !lispm_obj_is_nil(s) ? s + (offs << 4) : s;
-}
 
 /* atoms */
 static inline int lispm_obj_is_atom(LispmObj s) { return (s & 2u) == 0; }

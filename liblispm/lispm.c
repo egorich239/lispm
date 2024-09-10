@@ -48,15 +48,15 @@ unsigned lispm_list_scan(Obj *out, Obj li, unsigned limit) {
   return lispm_obj_is_nil(it) ? cntr : ~0u;
 }
 
-static Obj list_reverse_inplace(Obj li, unsigned offset) {
+static Obj list_reverse_inplace(Obj li, unsigned gc_offset) {
   /* not a public interface because it actually changes the object state */
   LISPM_ASSERT(lispm_obj_is_nil(li) || lispm_obj_is_st_obj(li));
   Obj cur = li, prev = NIL, next, *cons;
   while (!lispm_obj_is_nil(cur)) {
     cons = lispm_obj_unpack(cur), next = cons[0];
-    cons[0] = lispm_obj_st_move(prev, offset), prev = cur, cur = next;
+    cons[0] = lispm_gc_move(prev, gc_offset), prev = cur, cur = next;
   }
-  return lispm_obj_st_move(prev, offset);
+  return lispm_gc_move(prev, gc_offset);
 }
 static Obj list_map(Obj li, Obj (*fn)(Obj)) {
   Obj res = NIL;
@@ -73,26 +73,27 @@ Obj lispm_obj_alloc0(enum LispmStObjKind k) {
   return lispm_make_st_obj(k, lispm_st_obj_alloc0(lispm_obj_st_size(k)) - M.stack);
 }
 Obj *lispm_obj_unpack(Obj s) { return M.stack + lispm_obj_st_offs(s); }
-static Obj gc0(Obj s, unsigned high_mark, unsigned offset) {
+static inline unsigned gc_mark(void) { return M.sp - M.stack; }
+static Obj gc0(Obj s, LispmObj gc_bound, unsigned gc_offset) {
   TRACE_NATIVE_STACK();
   Obj tail = LISPM_SYM_NIL, *dest;
-  while (lispm_obj_is_st_obj(s) && lispm_obj_st_offs(s) < high_mark) {
+  while (lispm_obj_is_st_obj(s) && s < gc_bound) {
     unsigned sz = lispm_obj_st_size(s);
     Obj *src = lispm_obj_unpack(s), new_tail = lispm_obj_alloc0(lispm_obj_st_kind(s));
     dest = M.sp, dest[0] = tail, tail = new_tail;
     for (unsigned p = sz - 1; p; --p)
-      dest[p] = gc0(src[p], high_mark, offset);
+      dest[p] = gc0(src[p], gc_bound, gc_offset);
     s = src[0];
   }
   if (lispm_obj_is_nil(tail)) return s;
-  Obj res = list_reverse_inplace(tail, offset);
-  dest[0] = gc0(s, high_mark, offset);
+  Obj res = list_reverse_inplace(tail, gc_offset);
+  dest[0] = gc0(s, gc_bound, gc_offset);
   return res;
 }
 static Obj gc(Obj root, unsigned high_mark) {
-  unsigned low_mark = M.sp - M.stack;
-  root = gc0(root, high_mark, high_mark - low_mark);
-  const unsigned lowest_mark = M.sp - M.stack;
+  unsigned low_mark = gc_mark();
+  root = gc0(root, lispm_gc_bound(high_mark), lispm_gc_offset(low_mark, high_mark));
+  const unsigned lowest_mark = gc_mark();
   LISPM_TRACE(stack_depth, LISPM_TRACE_STACK_OBJECTS, M.stack_end - M.sp);
   while (lowest_mark < low_mark)
     M.stack[--high_mark] = M.stack[--low_mark];
@@ -263,7 +264,7 @@ static Obj parse(Obj tok) {
   if (lispm_obj_is_atom(tok)) return tok;
   TRACE_NATIVE_STACK();
 
-  if (tok == LISPM_TOK_QUOTE) return C(M.stack_end[~BUILTIN_QUOTE_INDEX], C(parse(lex()), NIL));
+  if (tok == LISPM_TOK_QUOTE) return C(M.stack_end[~BUILTIN_QUOTE_INDEX], C(lispm_parse_quote0(), NIL));
   LISPM_EVAL_CHECK(tok == LISPM_TOK_LPAREN, tok, parse_error, tok);
   if ((tok = lex()) == LISPM_TOK_RPAREN) return NIL;
 
@@ -468,7 +469,7 @@ static Obj eval(Obj syn) {
 
 /* API */
 Obj lispm_eval0(void) {
-  unsigned mark = M.sp - M.stack;
+  unsigned mark = gc_mark();
   Obj program = frame_depth_guard(sema, lispm_parse_quote0());
   Obj res = frame_depth_guard(eval, program);
   return gc(res, mark);
