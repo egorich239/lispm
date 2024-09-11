@@ -40,7 +40,7 @@ Obj lispm_return0(Obj obj) { return C(NIL, obj); }
 unsigned lispm_list_scan(Obj *out, Obj li, unsigned limit) {
   Obj it = li, val;
   unsigned cntr = 0;
-  while (lispm_obj_is_cons(it) && cntr < limit) {
+  while (!lispm_obj_is_nil(it) && cntr < limit) {
     C_UNPACK(it, val, it);
     out[cntr++] = val;
   }
@@ -76,7 +76,7 @@ Obj *lispm_obj_unpack(Obj s) { return M.stack + lispm_obj_st_offs(s); }
 static inline unsigned gc_mark(void) { return M.sp - M.stack; }
 static Obj gc0(Obj s, LispmObj gc_bound, unsigned gc_offset) {
   TRACE_NATIVE_STACK();
-  Obj tail = LISPM_SYM_NIL, *dest;
+  Obj tail = NIL, *dest;
   while (lispm_obj_is_st_obj(s) && s < gc_bound) {
     unsigned sz = lispm_obj_st_size(s);
     Obj *src = lispm_obj_unpack(s), new_tail = lispm_obj_alloc0(lispm_obj_st_kind(s));
@@ -103,7 +103,7 @@ static Obj gc(Obj root, unsigned high_mark) {
 
 /* htable functions */
 static inline unsigned htable_entry_key(Obj s) { return M.htable[lispm_literal_ht_offs(s)]; }
-static inline int htable_entry_key_payload(unsigned key) { return key >> 2; }
+static inline int htable_entry_key_payload(unsigned key) { return key & ~3u; }
 static inline int htable_entry_is_lvalue(Obj s) {
   LISPM_ASSERT(lispm_obj_is_literal(s));
   return htable_entry_key(s) & LISPM_BUILTIN_LITERAL_LVALUE;
@@ -137,7 +137,7 @@ static unsigned htable_hashf(unsigned seed) {
 static Obj htable_ensure(unsigned flags, LispmObj value) {
   unsigned offset = 5381, *entry;
   Obj lit;
-  for (int attempt = 0; attempt < LISPM_CONFIG_HTABLE_LOOKUP_LIMIT; ++attempt) {
+  for (int attempt = LISPM_CONFIG_HTABLE_LOOKUP_LIMIT; attempt; --attempt) {
     offset = htable_hashf(offset);
     entry = M.htable + (2 * offset);
     lit = lispm_make_literal(2 * offset);
@@ -149,10 +149,12 @@ static Obj htable_ensure(unsigned flags, LispmObj value) {
 ensure_insert:
   if (flags & LISPM_HTABLE_FORBID_INSERT) return LISPM_HTABLE_NOT_FOUND;
   if (*M.tp == ':') flags = (flags & ~LISPM_BUILTIN_LITERAL_LVALUE) | LISPM_BUILTIN_LITERAL_SELFREF;
-  entry[0] = ((M.tp - M.strings) << 2) | (flags & 3u);
+  LISPM_ASSERT(!((M.tp - M.strings) & 3u));
+  entry[0] = (M.tp - M.strings) | (flags & 3u);
   entry[1] = (flags & LISPM_BUILTIN_LITERAL_SELFREF) ? lit : value;
   while (*M.tp++) {}
-  while ((++M.tp - M.strings) & 3) {}
+  M.tp += 3u;
+  M.tp -= (M.tp - M.strings) & 3u;
   return lit;
 }
 
@@ -265,9 +267,8 @@ static Obj parse(Obj tok) {
 
   if (tok == LISPM_TOK_QUOTE) return C(M.stack_end[~BUILTIN_QUOTE_INDEX], C(lispm_parse_quote0(), NIL));
   LISPM_EVAL_CHECK(tok == LISPM_TOK_LPAREN, tok, parse_error, tok);
-  if ((tok = lex()) == LISPM_TOK_RPAREN) return NIL;
 
-  Obj res = C(parse(tok), NIL);
+  Obj res = NIL;
   while ((tok = lex()) != LISPM_TOK_RPAREN)
     res = C(parse(tok), res);
   return list_reverse_inplace(res, 0);
