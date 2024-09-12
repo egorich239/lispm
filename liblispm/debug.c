@@ -12,8 +12,6 @@
 #include <liblispm/internal-macros.h>
 #include <liblispm/internal-obj.h>
 
-extern const struct LispmBuiltin lispm_builtins_start[];
-
 #if LISPM_CONFIG_VERBOSE
 struct LispmTraceCallbacks lispm_trace = {};
 struct CallFrame {
@@ -29,7 +27,7 @@ static unsigned stack_trace_depth;
 
 static const char *literal_name(Obj l) {
   LISPM_ASSERT(lispm_obj_is_literal(l));
-  return lispm.strings + (lispm.htable[lispm_literal_ht_offs(l)] >> 2);
+  return lispm.strings + (lispm.htable[lispm_literal_ht_offs(l)] & ~3u);
 }
 
 void lispm_print_short(Obj sym) {

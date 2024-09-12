@@ -45,7 +45,7 @@
 #define P_UNPACK(q, a, b, c, d, n)                                                                                     \
   {                                                                                                                    \
     LispmObj li_ = (q);                                                                                                \
-    LISPM_ASSERT(lispm_obj_is_penta(li_));                                                                              \
+    LISPM_ASSERT(lispm_obj_is_penta(li_));                                                                             \
     LispmObj *cons_ = lispm_obj_unpack(li_);                                                                           \
     n = cons_[0], a = cons_[1], b = cons_[2], c = cons_[3], d = cons_[4];                                              \
   }

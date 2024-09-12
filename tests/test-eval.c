@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include <liblispm/debug.h>
+#include <liblispm/intrinsics.h>
 #include <liblispm/lispm.h>
 
 extern const char _binary_eval_data_txt_start[];

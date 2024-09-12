@@ -28,7 +28,7 @@ enum {
   LISPM_HTABLE_NOT_FOUND = (1u << 8) | 35u,
 
   /* htable_ensure flags */
-  LISPM_HTABLE_FORBID_INSERT = 8u,
+  LISPM_HTABLE_FORBID_INSERT = 1u << 8,
 };
 static inline int lispm_obj_is_htable_error(LispmObj o) { return (o & 255u) == 35u; }
 
