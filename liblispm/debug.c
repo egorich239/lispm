@@ -12,8 +12,6 @@
 #include <liblispm/internal-macros.h>
 #include <liblispm/internal-obj.h>
 
-extern const struct LispmBuiltin lispm_builtins_start[];
-
 #if LISPM_CONFIG_VERBOSE
 struct LispmTraceCallbacks lispm_trace = {};
 struct CallFrame {

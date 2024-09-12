@@ -1,5 +1,6 @@
 #pragma once
 
+#include <liblispm/intrinsics.h>
 #include <liblispm/types.h>
 
 enum LispmBuiltinFlags {
@@ -39,6 +40,7 @@ struct __attribute__((aligned(16))) LispmBuiltin {
   LispmObj (*aux)(LispmObj args);
   enum LispmBuiltinFlags flags;
 };
-/* Convenience macro to implement extensions */
-#define LISPM_BUILTINS_EXT(name)                                                                                       \
-  const struct LispmBuiltin name[] __attribute__((section(".lispm.rodata.builtins.ext"), aligned(16), used))
+LISPM_INTRINSIC_BUILTINS_DETAIL();
+
+/* Macro to define extensions */
+#define LISPM_BUILTINS_EXT LISPM_INTRINSIC_BUILTINS_EXT

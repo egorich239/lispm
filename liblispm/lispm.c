@@ -1,6 +1,8 @@
+#include "liblispm/intrinsics-gnu-elf.h"
 #include <liblispm/lispm.h>
 
 #include <liblispm/builtins.h>
+#include <liblispm/intrinsics.h>
 #include <liblispm/obj.h>
 #include <liblispm/rt.h>
 #include <liblispm/trace.h>
@@ -10,10 +12,6 @@
 #include <liblispm/internal-macros.h>
 #include <liblispm/internal-obj.h>
 
-extern struct LispmBuiltin lispm_builtins_start[];
-extern struct LispmBuiltin lispm_builtins_end[];
-
-const struct LispmBuiltin LISPM_SYN[];
 enum {
   BUILTIN_ERR_INDEX = 0,
   BUILTIN_APPLY_INDEX = 1,
@@ -23,10 +21,7 @@ enum {
 };
 
 /* builtins */
-Obj lispm_obj_from_builtin(const struct LispmBuiltin *bi) {
-  LISPM_ASSERT(lispm_builtins_start <= bi && bi < lispm_builtins_end);
-  return M.stack_end[~(bi - lispm_builtins_start)];
-}
+Obj lispm_obj_from_builtin(const struct LispmBuiltin *bi) { return M.stack_end[~lispm_intrinsic_builtin_offset(bi)]; }
 
 /* error reporting */
 __attribute__((noreturn)) void lispm_panic0(Obj ctx) {
@@ -102,27 +97,26 @@ static Obj gc(Obj root, unsigned high_mark) {
 }
 
 /* htable functions */
-static inline unsigned htable_entry_key(Obj s) { return M.htable[lispm_literal_ht_offs(s)]; }
-static inline int htable_entry_key_payload(unsigned key) { return key & ~3u; }
+static inline unsigned *htable_entry(Obj s) { return M.htable + lispm_literal_ht_offs(s); }
 static inline int htable_entry_is_lvalue(Obj s) {
   LISPM_ASSERT(lispm_obj_is_literal(s));
-  return htable_entry_key(s) & LISPM_BUILTIN_LITERAL_LVALUE;
+  return htable_entry(s)[0] & LISPM_BUILTIN_LITERAL_LVALUE;
 }
 static inline int htable_entry_is_rvalue(Obj s) {
   LISPM_ASSERT(lispm_obj_is_literal(s));
-  return !(htable_entry_key(s) & LISPM_BUILTIN_LITERAL_NOT_RVALUE);
+  return !(htable_entry(s)[0] & LISPM_BUILTIN_LITERAL_NOT_RVALUE);
 }
-static inline int htable_entry_key_streq(unsigned key) {
-  const char *h = M.strings + htable_entry_key_payload(key);
-  return !__builtin_strcmp(h, M.tp);
+static inline int htable_entry_key_streq(unsigned *entry) {
+  const char *h = M.strings + (entry[0] & ~3u);
+  return !lispm_intrinsic_strcmp(h, M.tp);
 }
 static inline Obj htable_entry_get_assoc(Obj s) {
   LISPM_ASSERT(lispm_obj_is_literal(s));
-  return M.htable[lispm_literal_ht_offs(s) + 1];
+  return htable_entry(s)[1];
 }
 static Obj htable_entry_set_assoc(Obj s, Obj assoc) {
   LISPM_ASSERT(lispm_obj_is_literal(s) && htable_entry_is_lvalue(s));
-  Obj *a = M.htable + (lispm_literal_ht_offs(s) + 1), old_assoc = *a;
+  Obj *a = htable_entry(s) + 1, old_assoc = *a;
   return *a = assoc, old_assoc;
 }
 static unsigned htable_hashf(unsigned seed) {
@@ -141,8 +135,8 @@ static Obj htable_ensure(unsigned flags, LispmObj value) {
     offset = htable_hashf(offset);
     entry = M.htable + (2 * offset);
     lit = lispm_make_literal(2 * offset);
-    if (!*entry) goto ensure_insert;                /* empty slot */
-    if (htable_entry_key_streq(*entry)) return lit; /* found! */
+    if (!*entry) goto ensure_insert;               /* empty slot */
+    if (htable_entry_key_streq(entry)) return lit; /* found! */
   }
   return LISPM_HTABLE_EXHAUSTED;
 
@@ -200,9 +194,8 @@ static Obj lex(void) {
       if (LEX_IS_DELIM(cat)) goto lex_atom;
       goto lex_fail;
     case S_NUM:
-      if (LEX_IS_DIGIT(cat) && !__builtin_umul_overflow(token_val, 10u, &token_val) &&
-          !__builtin_uadd_overflow(token_val, (unsigned)(c - '0'), &token_val) &&
-          lispm_shortnum_can_represent(token_val))
+      if (LEX_IS_DIGIT(cat) && !lispm_intrinsic_umul(token_val, 10u, &token_val) &&
+          !lispm_intrinsic_uadd(token_val, (unsigned)(c - '0'), &token_val) && lispm_shortnum_can_represent(token_val))
         continue;
       if (LEX_IS_DELIM(cat)) goto lex_num;
       goto lex_fail;
@@ -359,7 +352,7 @@ static Obj sema(Obj syn) {
   if (!lispm_obj_is_literal(form)) goto sema_ret_apply;
   Obj assoc = htable_entry_get_assoc(form);
   if (!lispm_obj_is_builtin(assoc)) goto sema_ret_apply;
-  const struct LispmBuiltin *bi = lispm_builtins_start + lispm_obj_builtin_offs(assoc);
+  const struct LispmBuiltin *bi = lispm_intrinsic_builtin_at(lispm_obj_builtin_offs(assoc));
   if (bi && (bi->flags & LISPM_BUILTIN_SYNTAX)) return C(assoc, bi->aux(args));
 sema_ret_apply:
   return C(lispm_make_builtin(BUILTIN_APPLY_INDEX), list_map(syn, sema));
@@ -458,7 +451,7 @@ static Obj eval(Obj syn) {
     }
 
     LISPM_ASSERT(lispm_obj_is_builtin(form));
-    const struct LispmBuiltin *bi = lispm_builtins_start + lispm_obj_builtin_offs(form);
+    const struct LispmBuiltin *bi = lispm_intrinsic_builtin_at(lispm_obj_builtin_offs(form));
     LISPM_EVAL_CHECK(bi->eval, form, panic, "a function expected, got: ", form);
 
     syn = bi->eval(arg);
@@ -481,14 +474,14 @@ int lispm_init(void) {
   M.tp = M.strings + 4; /* we use zero as sentinel value for missing entry in htable,
                            hence no value can have a zero offset into the strings table */
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
-  M.htable_index_shift = __builtin_clz(M.htable_index_size) + 1;
+  M.htable_index_shift = lispm_intrinsic_leading_zeros(M.htable_index_size) + 1;
   M.frame = NIL;
   M.frame_depth = lispm_make_shortnum(1);
 
-  const unsigned bilen = lispm_builtins_end - lispm_builtins_start;
+  const unsigned bilen = lispm_intrinsic_builtin_size();
   if (M.sp - (M.stack + LISPM_STACK_BOTTOM_OFFSET) < bilen) return 0;
   for (int i = 0; i < bilen; ++i) {
-    const struct LispmBuiltin *bi = lispm_builtins_start + i;
+    const struct LispmBuiltin *bi = lispm_intrinsic_builtin_at(i);
     const char *n = bi->name, *ns = n;
     if (!n) continue;
     for (char *nt = M.tp; (*nt++ = *ns++);)
@@ -501,17 +494,17 @@ int lispm_init(void) {
   return 1;
 }
 
-static Obj trycatch(unsigned mode) {
+static Obj trycatch(unsigned (*fn)()) {
   LISPM_ASSERT(M.htable_index_size != 0); /* check that the machine has been initialized */
   M.stack_bottom_mark = lispm_rt_stack_mark();
-  return M.stack[0] = lispm_rt_try(mode == 1 ? lispm_parse_quote0 : lispm_eval0);
+  return M.stack[0] = lispm_rt_try(fn);
 }
-Obj lispm_parse_quote(void) { return trycatch(1); }
-Obj lispm_eval(void) { return trycatch(2); }
+Obj lispm_parse_quote(void) { return trycatch(lispm_parse_quote0); }
+Obj lispm_eval(void) { return trycatch(lispm_eval0); }
 
 static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
-const struct LispmBuiltin LISPM_SYN[] __attribute__((section(".lispm.rodata.builtins.core"), aligned(16), used)) = {
+LISPM_INTRINSIC_BUILTINS_CORE(LISPM_SYN) = {
     {"#err!", 0, 0, LISPM_BUILTIN_LITERAL_SELFREF},
     {"(apply)", evapply, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
     {"(assoc)", evassoc, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
