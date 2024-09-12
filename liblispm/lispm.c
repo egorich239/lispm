@@ -156,12 +156,12 @@ ensure_insert:
 #include <liblispm/lexer.inc.h>
 
 static Obj lex(void) {
-  enum { S_ATOM, S_NUM, S_COMMENT, S_INIT } state = S_INIT;
-  _Static_assert(LEX_IS_ATOM_SYM(S_ATOM), "S_ATOM must match the category");
-  _Static_assert(LEX_IS_DIGIT(S_NUM), "S_NUM must match the category");
+  enum { S_NUM, S_ATOM, S_COMMENT, S_HASH_ATOM, S_INIT } state = S_INIT;
+  _Static_assert((S_NUM | S_ATOM) == S_ATOM && (S_NUM | S_HASH_ATOM) == S_HASH_ATOM &&
+                     (S_HASH_ATOM | S_ATOM) == S_HASH_ATOM,
+                 "lexer relies on these assumptions");
   char *tp = M.tp;
-  unsigned token_val = 0, flags = LISPM_BUILTIN_LITERAL_LVALUE;
-  unsigned fc = 0, c, cat;
+  unsigned char c, cat;
   for (; tp + 4 < M.strings_end && M.pc < M.pc_end; ++M.pc) {
     c = (unsigned char)*M.pc;
     if (c >= 128) goto lex_fail;
@@ -172,48 +172,47 @@ static Obj lex(void) {
       if (c == ';') {
         state = S_COMMENT;
         continue;
-      } else if (c == '#') {
-        *tp++ = c, state = S_ATOM;
-        flags ^= LISPM_HTABLE_FORBID_INSERT;
-        continue;
       }
-      if (LEX_IS_TOK(cat)) return ++M.pc, lispm_make_token(c);
-      if (LEX_IS_ATOM_SYM(cat)) {
-        M.pc--, state = cat, fc = c;
+      if (LEX_IS_DELIM(cat)) return lispm_make_token(*M.pc++);
+      if (LEX_IS_ATOM_SYM(cat) || c == '#') {
+        state = cat, *tp++ = c;
         continue;
       }
       goto lex_fail;
     case S_COMMENT:
       if (c == '\n') state = S_INIT;
-      break;
+      continue;
     case S_ATOM:
+    case S_HASH_ATOM:
+    case S_NUM:
+      if (LEX_IS_DELIM(cat)) goto lex_tail;
+      if ((state | cat) != state) goto lex_fail;
       if (LEX_IS_ATOM_SYM(cat)) {
         *tp++ = c;
         continue;
       }
-      if (LEX_IS_DELIM(cat)) goto lex_atom;
-      goto lex_fail;
-    case S_NUM:
-      if (LEX_IS_DIGIT(cat) && !lispm_intrinsic_umul(token_val, 10u, &token_val) &&
-          !lispm_intrinsic_uadd(token_val, (unsigned)(c - '0'), &token_val) && lispm_shortnum_can_represent(token_val))
-        continue;
-      if (LEX_IS_DELIM(cat)) goto lex_num;
       goto lex_fail;
     }
   }
   if (tp + 4 == M.strings_end) goto lex_fail;
-  if (state == S_ATOM) goto lex_atom;
-  if (state == S_NUM) goto lex_num;
-lex_fail:
-  LISPM_EVAL_CHECK(0, NIL, lex_error);
-lex_atom:
+lex_tail:
   *tp++ = 0;
+  if (state == S_NUM) goto lex_num;
+  LISPM_ASSERT(state == S_HASH_ATOM || state == S_ATOM);
+  unsigned flags = state == S_HASH_ATOM ? LISPM_HTABLE_FORBID_INSERT : LISPM_BUILTIN_LITERAL_LVALUE;
   Obj res = htable_ensure(flags, LISPM_LEX_UNBOUND);
   LISPM_EVAL_CHECK(!lispm_obj_is_htable_error(res), res, panic, "could not insert symbol: ", res);
   return res;
 lex_num:
-  if (token_val != 0 && fc == '0') goto lex_fail;
+  if (M.tp[0] == '0' && M.tp[1] != 0) goto lex_fail;
+  unsigned token_val = 0;
+  for (tp = M.tp; *tp; tp++)
+    if (lispm_intrinsic_umul(token_val, 10u, &token_val) || lispm_intrinsic_uadd(token_val, *tp - '0', &token_val))
+      goto lex_fail;
+  if (!lispm_shortnum_can_represent(token_val)) goto lex_fail;
   return lispm_make_shortnum(token_val);
+lex_fail:
+  LISPM_EVAL_CHECK(0, NIL, lex_error);
 }
 /* parser */
 static void lex_frame_enter(void) {
