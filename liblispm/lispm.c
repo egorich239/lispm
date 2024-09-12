@@ -156,10 +156,8 @@ ensure_insert:
 #include <liblispm/lexer.inc.h>
 
 static Obj lex(void) {
-  enum { S_NUM, S_ATOM, S_COMMENT, S_HASH_ATOM, S_INIT } state = S_INIT;
-  _Static_assert((S_NUM | S_ATOM) == S_ATOM && (S_NUM | S_HASH_ATOM) == S_HASH_ATOM &&
-                     (S_HASH_ATOM | S_ATOM) == S_HASH_ATOM,
-                 "lexer relies on these assumptions");
+  enum { S_INIT, S_HASH_ATOM, S_ATOM, S_NUM, S_COMMENT } state = S_INIT;
+  _Static_assert(S_HASH_ATOM < S_ATOM && S_ATOM < S_NUM, "lexer relies on these assumptions");
   char *tp = M.tp;
   unsigned char c, cat;
   for (; tp + 4 < M.strings_end && M.pc < M.pc_end; ++M.pc) {
@@ -182,11 +180,11 @@ static Obj lex(void) {
     case S_COMMENT:
       if (c == '\n') state = S_INIT;
       continue;
-    case S_ATOM:
     case S_HASH_ATOM:
+    case S_ATOM:
     case S_NUM:
       if (LEX_IS_DELIM(cat)) goto lex_tail;
-      if ((state | cat) != state) goto lex_fail;
+      if (state > cat) goto lex_fail;
       if (LEX_IS_ATOM_SYM(cat)) {
         *tp++ = c;
         continue;
@@ -196,7 +194,7 @@ static Obj lex(void) {
   }
   if (tp + 4 == M.strings_end) goto lex_fail;
 lex_tail:
-  *tp++ = 0;
+  *tp = 0;
   if (state == S_NUM) goto lex_num;
   LISPM_ASSERT(state == S_HASH_ATOM || state == S_ATOM);
   unsigned flags = state == S_HASH_ATOM ? LISPM_HTABLE_FORBID_INSERT : LISPM_BUILTIN_LITERAL_LVALUE;
@@ -204,9 +202,10 @@ lex_tail:
   LISPM_EVAL_CHECK(!lispm_obj_is_htable_error(res), res, panic, "could not insert symbol: ", res);
   return res;
 lex_num:
-  if (M.tp[0] == '0' && M.tp[1] != 0) goto lex_fail;
+  tp = M.tp;
+  if (tp[0] == '0' && tp[1] != 0) goto lex_fail;
   unsigned token_val = 0;
-  for (tp = M.tp; *tp; tp++)
+  for (; *tp; tp++)
     if (lispm_intrinsic_umul(token_val, 10u, &token_val) || lispm_intrinsic_uadd(token_val, *tp - '0', &token_val))
       goto lex_fail;
   if (!lispm_shortnum_can_represent(token_val)) goto lex_fail;
