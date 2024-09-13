@@ -51,11 +51,9 @@ enum {
 
   LISPM_LEX_FREE = 11,
   LISPM_LEX_BOUND = 15,
-  LISPM_LEX_BOUNDREC = 15 | ~(~0u >> 1),
 };
 static inline LispmObj lispm_make_sema(unsigned frame_depth, unsigned mask) {
-  LISPM_ASSERT((frame_depth < ~(~0u >> 5)) &&
-               (mask == LISPM_LEX_BOUND || mask == LISPM_LEX_BOUNDREC || mask == LISPM_LEX_FREE));
+  LISPM_ASSERT((frame_depth < ~(~0u >> 4)) && (mask == LISPM_LEX_BOUND || mask == LISPM_LEX_FREE));
   return (frame_depth << 4) | mask;
 }
 
@@ -64,7 +62,7 @@ static inline int lispm_obj_is_sema_bound(LispmObj o) { return (o & 15u) == LISP
 static inline int lispm_obj_is_sema_free(LispmObj o) { return (o & 15u) == LISPM_LEX_FREE; }
 static inline unsigned lispm_obj_sema_depth(LispmObj o) {
   LISPM_ASSERT(lispm_obj_is_sema(o));
-  return (o & (~0u >> 1)) >> 4;
+  return o >> 4;
 }
 
 /* evaluation phase */

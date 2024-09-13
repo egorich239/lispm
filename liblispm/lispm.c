@@ -222,10 +222,10 @@ static void lex_frame_shadow(Obj lit, Obj old_assoc) {
   Obj old_shadow = C_CAR(M.frame);
   C_CAR(M.frame) = T(lit, old_assoc, old_shadow);
 }
-static void lex_frame_bind(Obj lit, unsigned mask) {
-  LISPM_ASSERT(lispm_obj_is_literal(lit) && (mask == LISPM_LEX_BOUND || mask == LISPM_LEX_BOUNDREC));
+static void lex_frame_bind(Obj lit) {
+  LISPM_ASSERT(lispm_obj_is_literal(lit));
   if (!htable_entry_is_lvalue(lit)) goto frame_bind_fail;
-  Obj new_assoc = lispm_make_sema(M.frame_depth, mask), old_assoc = htable_entry_set_assoc(lit, new_assoc);
+  Obj new_assoc = lispm_make_sema(M.frame_depth, LISPM_LEX_BOUND), old_assoc = htable_entry_set_assoc(lit, new_assoc);
   if (lispm_obj_is_sema_bound(old_assoc) && lispm_obj_sema_depth(old_assoc) == M.frame_depth) goto frame_bind_fail;
   return lex_frame_shadow(lit, old_assoc);
 frame_bind_fail:
@@ -297,7 +297,7 @@ static Obj sema_lambda(Obj def) {
   C_ENSURE(argsbody[0], "list of formal arguments expected")
   FOR_EACH_C(arg, argsbody[0]) {
     LISPM_EVAL_CHECK(lispm_obj_is_literal(arg), arg, parse_error, arg);
-    lex_frame_bind(arg, LISPM_LEX_BOUND);
+    lex_frame_bind(arg);
   }
   Obj body = sema(argsbody[1]), captures = lex_frame_leave();
   return T(captures, argsbody[0], body);
@@ -312,7 +312,7 @@ static Obj sema_let(Obj def) {
                      "assignment must have form (name expr), got: ", asgn);
     asgns = T(nameval[0], sema(nameval[1]), asgns);
     lex_frame_enter();
-    lex_frame_bind(nameval[0], LISPM_LEX_BOUND);
+    lex_frame_bind(nameval[0]);
   }
   expr = sema(asgnsexpr[1]);
   FOR_EACH_T(name, val, asgns) { expr = sema_apply_lambda(T(lex_frame_leave(), C(name, NIL), expr), C(val, NIL)); }
@@ -329,7 +329,7 @@ static Obj sema_letrec(Obj def) {
                      "assignment must have form (name expr), got: ", asgn);
     args = C(nameval[0], args);
     exprs = C(nameval[1], exprs);
-    lex_frame_bind(nameval[0], LISPM_LEX_BOUNDREC);
+    lex_frame_bind(nameval[0]);
   }
   Obj vals = list_map(exprs, sema), expr = sema(asgnsexpr[1]), captures = lex_frame_leave();
   return C(T(captures, args, expr), vals);
@@ -414,7 +414,7 @@ static Obj evlet(Obj arg) { return arg; }
 static Obj evletrec(Obj arg) {
   Obj lambda, exprs;
   C_UNPACK(arg, lambda, exprs);
-  FOR_EACH_C(name, S_2(lambda)) { evframe_set(name, LISPM_LEX_UNBOUND); }
+  FOR_EACH_C(name, S_2(lambda)) { evframe_set(name, M.stack_end[~BUILTIN_ERR_INDEX]); }
   return sema_apply_lambda(lambda, exprs);
 }
 static Obj evapply(Obj expr) {
@@ -425,7 +425,9 @@ static Obj evapply(Obj expr) {
   LISPM_EVAL_CHECK(lispm_obj_is_triplet(f), f, panic, "a function expected, got: ", f);
   Obj captures, argf, body;
   T_UNPACK(f, captures, argf, body);
-  FOR_EACH_T(name, val, captures) { evframe_set(name, val); }
+  FOR_EACH_T(name, val, captures) {
+    if (val != M.stack_end[~BUILTIN_ERR_INDEX]) evframe_set(name, val);
+  }
   Obj argv = args, name, value;
   while (argf != NIL && argv != NIL) { /* arguments */
     C_UNPACK(argf, name, argf);
@@ -503,7 +505,7 @@ Obj lispm_eval(void) { return trycatch(lispm_eval0); }
 static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
 LISPM_INTRINSIC_BUILTINS_CORE(LISPM_SYN) = {
-    {"#err!", 0, 0, LISPM_BUILTIN_LITERAL_SELFREF},
+    {"#err!", 0, 0, LISPM_BUILTIN_LITERAL_SELFREF | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
     {"(apply)", evapply, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
     {"(assoc)", evassoc, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
     {"quote", evquote, sema_quote, LISPM_BUILTIN_SYNTAX | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
