@@ -32,30 +32,15 @@ enum {
 };
 static inline int lispm_obj_is_htable_error(LispmObj o) { return (o & 255u) == 35u; }
 
-/* frame depth handling */
-static inline int lispm_is_frame_depth(LispmObj o) {
-  return lispm_obj_is_shortnum(o) && 0 < lispm_shortnum_val(o) && lispm_shortnum_val(o) < ~(~0u >> 4);
-}
-static inline void lispm_frame_depth_inc(LispmObj *frame_depth) {
-  LISPM_ASSERT(lispm_is_frame_depth(*frame_depth) && lispm_is_frame_depth(*frame_depth + 4));
-  *frame_depth += 4;
-}
-static inline void lispm_frame_depth_dec(LispmObj *frame_depth) {
-  LISPM_ASSERT(lispm_is_frame_depth(*frame_depth) && lispm_is_frame_depth(*frame_depth - 4));
-  *frame_depth -= 4;
-}
-
 /* semantic analysis */
 enum {
   LISPM_LEX_UNBOUND = 15u,
 
   LISPM_LEX_FREE = 11,
   LISPM_LEX_BOUND = 15,
-  LISPM_LEX_BOUNDREC = 15 | ~(~0u >> 1),
 };
 static inline LispmObj lispm_make_sema(unsigned frame_depth, unsigned mask) {
-  LISPM_ASSERT((frame_depth < ~(~0u >> 5)) &&
-               (mask == LISPM_LEX_BOUND || mask == LISPM_LEX_BOUNDREC || mask == LISPM_LEX_FREE));
+  LISPM_ASSERT((frame_depth < ~(~0u >> 4)) && (mask == LISPM_LEX_BOUND || mask == LISPM_LEX_FREE));
   return (frame_depth << 4) | mask;
 }
 
@@ -64,7 +49,7 @@ static inline int lispm_obj_is_sema_bound(LispmObj o) { return (o & 15u) == LISP
 static inline int lispm_obj_is_sema_free(LispmObj o) { return (o & 15u) == LISPM_LEX_FREE; }
 static inline unsigned lispm_obj_sema_depth(LispmObj o) {
   LISPM_ASSERT(lispm_obj_is_sema(o));
-  return (o & (~0u >> 1)) >> 4;
+  return o >> 4;
 }
 
 /* evaluation phase */

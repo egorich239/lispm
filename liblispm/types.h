@@ -105,8 +105,9 @@ struct Lispm {
 
   /* Information about the current lexical frame during semantic analysis
      and runtime frame during evaluation. */
+  unsigned lex_depth;
   LispmObj frame;
-  unsigned frame_depth; /* shortnum during evaluation! */
+  unsigned frame_pointer;
 
   /* Marks the bottom of the native call stack at the beginning of lispm_exec() */
   void *stack_bottom_mark;

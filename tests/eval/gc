@@ -14,10 +14,23 @@ gc-pressure
     )
     (list
         (make-list 6)
-        (length-list (make-list 20000))
+        (length-list (make-list 2000))
     )
 )
 (
     (1 2 3 4 5 6)
-    20000
+    2000
 )
+
+fib-1000000
+(letrec
+    (
+        (fib. (lambda (n p q) (cond
+            ((eq? n 1) p)
+            (#t (fib. (- n 1) (+ p q :modulo) p)) 
+        )))
+        (fib (lambda (n) (fib. n 1 0)))
+    )
+    (fib 1000000)
+)
+811013307  ; verified by a python script

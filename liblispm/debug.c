@@ -44,44 +44,39 @@ void lispm_print_short(Obj sym) {
     return;
   }
   if (lispm_obj_is_builtin(sym)) {
-    fprintf(stderr, "<builtin %s>", lispm_builtins_start[lispm_obj_builtin_offs(sym)].name);
+    fprintf(stderr, "<%s>", lispm_builtins_start[lispm_obj_builtin_offs(sym)].name);
     return;
   }
   if (lispm_obj_is_special(sym)) {
-    fprintf(stderr, "<special %x>", sym);
-    return;
-  }
-  if (lispm_obj_is_cons(sym)) {
-    enum { COUNTER_INIT_VALUE = 7 };
-    int counter = COUNTER_INIT_VALUE;
-    fprintf(stderr, "(");
-    while (lispm_obj_is_cons(sym)) {
-      Obj *cons = lispm_obj_unpack(sym);
-      sym = cons[0];
-      if (counter < 0) continue;
-      if (counter == 0) {
-        fprintf(stderr, " ...");
-        --counter;
-        continue;
-      }
-      if (counter-- < COUNTER_INIT_VALUE) { fprintf(stderr, " "); }
-      lispm_print_short(cons[1]);
-    }
-    if (!lispm_obj_is_nil(sym) && counter >= 0) {
-      fprintf(stderr, " ");
-      lispm_print_short(sym);
-    }
-    fprintf(stderr, lispm_obj_is_nil(sym) ? ")" : "]");
+    fprintf(stderr, "{%x}", sym);
     return;
   }
   if (lispm_obj_is_st_obj(sym)) {
-    Obj *cab = lispm_obj_unpack(sym);
-    fprintf(stderr, "[");
-    for (int i = 0; i < lispm_obj_st_size(sym); ++i) {
-      if (i) fprintf(stderr, " ");
-      lispm_print_short(cab[i]);
+    Obj *obj = lispm_obj_unpack(sym);
+
+    fprintf(stderr, "(");
+    while (lispm_obj_is_st_obj(sym) && (lispm_obj_is_nil(obj[0]) || lispm_obj_is_st_obj(obj[0]))) {
+      if (lispm_obj_st_size(sym) > 2) fprintf(stderr, "[");
+      for (int i = 1; i < lispm_obj_st_size(sym); ++i) {
+        if (i != 1) fprintf(stderr, " ");
+        lispm_print_short(obj[i]);
+      }
+      if (lispm_obj_st_size(sym) > 2) fprintf(stderr, "]");
+      fprintf(stderr, " ");
+      sym = obj[0];
+      if (!lispm_obj_is_nil(sym)) obj = lispm_obj_unpack(sym);
     }
-    fprintf(stderr, "]");
+    if (lispm_obj_is_st_obj(sym)) {
+      fprintf(stderr, "[");
+      for (int i = 0; i < lispm_obj_st_size(sym); ++i) {
+        if (i != 0) fprintf(stderr, " ");
+        lispm_print_short(obj[i]);
+      }
+      fprintf(stderr, "]");
+    } else if (!lispm_obj_is_nil(sym)) {
+      lispm_print_short(sym);
+    }
+    fprintf(stderr, ")");
     return;
   }
 }
