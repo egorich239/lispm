@@ -1,4 +1,3 @@
-#include "liblispm/intrinsics-gnu-elf.h"
 #include <liblispm/lispm.h>
 
 #include <liblispm/builtins.h>
@@ -370,6 +369,7 @@ static Obj evframe_get(Obj name) {
   LISPM_EVAL_CHECK(htable_entry_is_rvalue(name), name, panic, "cannot use symbol as a value: ", name);
   Obj res = htable_entry_get_assoc(name);
   LISPM_ASSERT(res != LISPM_LEX_UNBOUND);
+  LISPM_EVAL_CHECK(res != lispm_make_builtin(BUILTIN_REC_INDEX), name, unbound_symbol, name);
   return res;
 }
 static Obj evframe_set(Obj name, Obj val) {
@@ -386,11 +386,11 @@ static Obj evframe_enter(Obj frame, Obj top) {
 }
 static Obj eval(Obj e);
 static Obj evquote(Obj arg) { return lispm_return0(arg); }
-static Obj evassoc(Obj arg) { return lispm_return0(evframe_get(arg)); }
+static Obj evassoc(Obj name) { return lispm_return0(evframe_get(name)); }
 static Obj evlambda(Obj lambda) {
   Obj names, args, body, captures = NIL;
   T_UNPACK(lambda, names, args, body);
-  FOR_EACH_C(name, names) { captures = T(name, evframe_get(name), captures); }
+  FOR_EACH_C(name, names) { captures = T(name, htable_entry_get_assoc(name), captures); }
   return lispm_return0(T(captures, args, body));
 }
 static Obj evcon(Obj brans) {
@@ -446,8 +446,6 @@ static Obj eval(Obj syn) {
     LISPM_EVAL_CHECK(bi->eval, form, panic, "a function expected, got: ", form);
     syn = bi->eval(arg);
   }
-  LISPM_EVAL_CHECK(res != lispm_make_builtin(BUILTIN_REC_INDEX), res, panic,
-                   "a self-recursive definition gets evaluated", NIL);
   res = evframe_enter(NIL, res);
   M.frame = old_frame, M.frame_pointer = old_fp;
   return res;
