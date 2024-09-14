@@ -14,10 +14,11 @@
 
 enum {
   BUILTIN_ERR_INDEX = 0,
-  BUILTIN_APPLY_INDEX = 1,
-  BUILTIN_ASSOC_INDEX = 2,
-  BUILTIN_QUOTE_INDEX = 3,
-  BUILTIN_LAMBDA_INDEX = 4,
+  BUILTIN_REC_INDEX = 1,
+  BUILTIN_APPLY_INDEX = 2,
+  BUILTIN_ASSOC_INDEX = 3,
+  BUILTIN_QUOTE_INDEX = 4,
+  BUILTIN_LAMBDA_INDEX = 5,
 };
 
 /* builtins */
@@ -368,32 +369,18 @@ static Obj evframe_get(Obj name) {
   LISPM_ASSERT(lispm_obj_is_literal(name));
   LISPM_EVAL_CHECK(htable_entry_is_rvalue(name), name, panic, "cannot use symbol as a value: ", name);
   Obj res = htable_entry_get_assoc(name);
-  if (lispm_obj_is_assoc(res)) res = S_1(lispm_obj_assoc_deref(res));
-  LISPM_EVAL_CHECK(res != LISPM_LEX_UNBOUND, name, unbound_symbol, name);
+  LISPM_ASSERT(res != LISPM_LEX_UNBOUND);
   return res;
 }
-static void evframe_set(Obj name, Obj val) {
+static Obj evframe_set(Obj name, Obj val) {
   LISPM_ASSERT(lispm_obj_is_literal(name) && htable_entry_is_lvalue(name));
-  Obj res = htable_entry_get_assoc(name);
-  if (lispm_obj_is_assoc(res) && S_2(lispm_obj_assoc_deref(res)) == M.frame_depth) {
-    S_1(lispm_obj_assoc_deref(res)) = val;
-  } else {
-    M.frame = P(val, M.frame_depth, res, name, M.frame);
-    htable_entry_set_assoc(name, lispm_make_assoc(M.frame));
-  }
+  M.frame = T(name, htable_entry_set_assoc(name, val), M.frame);
+  return val;
 }
-static Obj evframe_enter(void) {
-  lispm_frame_depth_inc(&M.frame_depth);
-  Obj old_frame = M.frame;
-  return M.frame = NIL, old_frame;
-}
-static void evframe_leave(Obj old_frame) {
-  while (!lispm_obj_is_nil(M.frame)) {
-    htable_entry_set_assoc(S_4(M.frame), S_3(M.frame));
-    M.frame = S_NEXT(M.frame);
-  }
-  M.frame = old_frame;
-  lispm_frame_depth_dec(&M.frame_depth);
+static void evframe_enter(Obj frame) {
+  FOR_EACH_T(name, val, M.frame) { htable_entry_set_assoc(name, val); }
+  M.frame = NIL;
+  FOR_EACH_T(name, val, frame) { evframe_set(name, val); }
 }
 static Obj eval(Obj e);
 static Obj evquote(Obj arg) { return lispm_return0(arg); }
@@ -414,7 +401,7 @@ static Obj evlet(Obj arg) { return arg; }
 static Obj evletrec(Obj arg) {
   Obj lambda, exprs;
   C_UNPACK(arg, lambda, exprs);
-  FOR_EACH_C(name, S_2(lambda)) { evframe_set(name, M.stack_end[~BUILTIN_ERR_INDEX]); }
+  FOR_EACH_C(name, S_2(lambda)) { evframe_set(name, lispm_make_builtin(BUILTIN_REC_INDEX)); }
   return sema_apply_lambda(lambda, exprs);
 }
 static Obj evapply(Obj expr) {
@@ -423,25 +410,28 @@ static Obj evapply(Obj expr) {
   if (lispm_obj_is_builtin(f)) return es;
 
   LISPM_EVAL_CHECK(lispm_obj_is_triplet(f), f, panic, "a function expected, got: ", f);
-  Obj captures, argf, body;
+  Obj captures, argf, body, frame = NIL;
   T_UNPACK(f, captures, argf, body);
   FOR_EACH_T(name, val, captures) {
-    if (val != M.stack_end[~BUILTIN_ERR_INDEX]) evframe_set(name, val);
+    if (val == lispm_make_builtin(BUILTIN_REC_INDEX)) val = evframe_get(name);
+    frame = T(name, evframe_set(name, val), frame);
   }
   Obj argv = args, name, value;
   while (argf != NIL && argv != NIL) { /* arguments */
     C_UNPACK(argf, name, argf);
     C_UNPACK(argv, value, argv);
-    evframe_set(name, value);
+    frame = T(name, evframe_set(name, value), frame);
   }
   LISPM_EVAL_CHECK(lispm_obj_is_nil(argf) && lispm_obj_is_nil(argv), f, panic,
                    "number of formal arguments does not match the number of passed arguments: ", f);
+  evframe_enter(frame);
   return body;
 }
 static Obj eval(Obj syn) {
   TRACE_NATIVE_STACK();
   unsigned mark = M.sp - M.stack;
-  Obj old_frame = evframe_enter(), res;
+  Obj old_frame = M.frame, res;
+  M.frame = NIL;
   for (;;) {
     Obj form, arg;
     C_UNPACK(syn, form, arg);
@@ -453,10 +443,12 @@ static Obj eval(Obj syn) {
     LISPM_ASSERT(lispm_obj_is_builtin(form));
     const struct LispmBuiltin *bi = lispm_intrinsic_builtin_at(lispm_obj_builtin_offs(form));
     LISPM_EVAL_CHECK(bi->eval, form, panic, "a function expected, got: ", form);
-
     syn = bi->eval(arg);
   }
-  evframe_leave(old_frame);
+  evframe_enter(NIL);
+  M.frame = old_frame;
+  LISPM_EVAL_CHECK(res != lispm_make_builtin(BUILTIN_REC_INDEX), res, panic,
+                   "a self-recursive definition gets evaluated", NIL);
   return gc(res, mark);
 }
 
@@ -506,6 +498,7 @@ static Obj PANIC(Obj a) { LISPM_EVAL_CHECK(0, a, panic, "user panic: ", a); }
 
 LISPM_INTRINSIC_BUILTINS_CORE(LISPM_SYN) = {
     {"#err!", 0, 0, LISPM_BUILTIN_LITERAL_SELFREF | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
+    {"(rec)", evapply, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
     {"(apply)", evapply, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
     {"(assoc)", evassoc, 0, LISPM_BUILTIN_LITERAL_NOT_RVALUE},
     {"quote", evquote, sema_quote, LISPM_BUILTIN_SYNTAX | LISPM_BUILTIN_LITERAL_NOT_RVALUE},
