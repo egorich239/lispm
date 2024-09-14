@@ -355,13 +355,6 @@ static Obj sema(Obj syn) {
 sema_ret_apply:
   return C(lispm_make_builtin(BUILTIN_APPLY_INDEX), list_map(syn, sema));
 }
-static Obj frame_depth_guard(Obj (*op)(Obj), Obj v) {
-  LISPM_ASSERT(lispm_obj_is_shortnum(M.lex_depth));
-  unsigned orig_depth = M.lex_depth;
-  Obj res = op(v);
-  LISPM_ASSERT(orig_depth == M.lex_depth);
-  return (void)orig_depth, res;
-}
 
 /* eval */
 static Obj evframe_get(Obj name) {
@@ -372,10 +365,9 @@ static Obj evframe_get(Obj name) {
   LISPM_EVAL_CHECK(res != lispm_make_builtin(BUILTIN_REC_INDEX), name, unbound_symbol, name);
   return res;
 }
-static Obj evframe_set(Obj name, Obj val) {
+static void evframe_set(Obj name, Obj val) {
   LISPM_ASSERT(lispm_obj_is_literal(name) && htable_entry_is_lvalue(name));
   M.frame = T(name, htable_entry_set_assoc(name, val), M.frame);
-  return val;
 }
 static Obj evframe_enter(Obj frame, Obj top) {
   FOR_EACH_T(name, val, M.frame) { htable_entry_set_assoc(name, val); }
@@ -416,13 +408,13 @@ static Obj evapply(Obj expr) {
   T_UNPACK(f, captures, argn, body);
   FOR_EACH_T(name, val, captures) {
     if (val == lispm_make_builtin(BUILTIN_REC_INDEX)) val = evframe_get(name);
-    frame = T(name, evframe_set(name, val), frame);
+    frame = T(name, val, frame);
   }
   Obj name, value;
   while (argn != NIL && argv != NIL) { /* arguments */
     C_UNPACK(argn, name, argn);
     C_UNPACK(argv, value, argv);
-    frame = T(name, evframe_set(name, value), frame);
+    frame = T(name, value, frame);
   }
   LISPM_EVAL_CHECK(lispm_obj_is_nil(argn) && lispm_obj_is_nil(argv), f, panic,
                    "number of formal arguments does not match the number of passed arguments: ", f);
@@ -455,7 +447,7 @@ static Obj eval(Obj syn) {
 Obj lispm_eval0(void) {
   unsigned old_fp = M.frame_pointer;
   M.frame_pointer = gc_mark();
-  Obj program = frame_depth_guard(sema, lispm_parse_quote0());
+  Obj program = sema(lispm_parse_quote0());
   Obj res = gc(eval(program));
   M.frame_pointer = old_fp;
   return res;
