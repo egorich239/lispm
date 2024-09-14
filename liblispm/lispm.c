@@ -86,8 +86,8 @@ static Obj gc0(Obj s, LispmObj gc_bound, unsigned gc_offset) {
   dest[0] = gc0(s, gc_bound, gc_offset);
   return res;
 }
-static Obj gc(Obj root, unsigned high_mark) {
-  unsigned low_mark = gc_mark();
+static Obj gc(Obj root) {
+  unsigned high_mark = M.frame_pointer, low_mark = gc_mark();
   root = gc0(root, lispm_gc_bound(high_mark), lispm_gc_offset(low_mark, high_mark));
   const unsigned lowest_mark = gc_mark();
   LISPM_TRACE(stack_depth, LISPM_TRACE_STACK_OBJECTS, M.stack_end - M.sp);
@@ -216,7 +216,7 @@ lex_fail:
 }
 /* parser */
 static void lex_frame_enter(void) {
-  lispm_frame_depth_inc(&M.frame_depth);
+  ++M.lex_depth;
   M.frame = C(NIL, M.frame);
 }
 static void lex_frame_shadow(Obj lit, Obj old_assoc) {
@@ -226,8 +226,8 @@ static void lex_frame_shadow(Obj lit, Obj old_assoc) {
 static void lex_frame_bind(Obj lit) {
   LISPM_ASSERT(lispm_obj_is_literal(lit));
   if (!htable_entry_is_lvalue(lit)) goto frame_bind_fail;
-  Obj new_assoc = lispm_make_sema(M.frame_depth, LISPM_LEX_BOUND), old_assoc = htable_entry_set_assoc(lit, new_assoc);
-  if (lispm_obj_is_sema_bound(old_assoc) && lispm_obj_sema_depth(old_assoc) == M.frame_depth) goto frame_bind_fail;
+  Obj new_assoc = lispm_make_sema(M.lex_depth, LISPM_LEX_BOUND), old_assoc = htable_entry_set_assoc(lit, new_assoc);
+  if (lispm_obj_is_sema_bound(old_assoc) && lispm_obj_sema_depth(old_assoc) == M.lex_depth) goto frame_bind_fail;
   return lex_frame_shadow(lit, old_assoc);
 frame_bind_fail:
   LISPM_EVAL_CHECK(0, lit, illegal_bind, lit);
@@ -235,14 +235,14 @@ frame_bind_fail:
 static void lex_frame_use(Obj lit) {
   LISPM_ASSERT(lispm_obj_is_literal(lit));
   if (!htable_entry_is_lvalue(lit)) return;
-  Obj old_assoc = htable_entry_get_assoc(lit), new_assoc = lispm_make_sema(M.frame_depth, LISPM_LEX_FREE);
+  Obj old_assoc = htable_entry_get_assoc(lit), new_assoc = lispm_make_sema(M.lex_depth, LISPM_LEX_FREE);
   LISPM_EVAL_CHECK(old_assoc != LISPM_LEX_UNBOUND, lit, unbound_symbol, lit);
   if (new_assoc > old_assoc) lex_frame_shadow(lit, htable_entry_set_assoc(lit, new_assoc));
 }
 static Obj lex_frame_leave(void) {
   Obj shadow;
   C_UNPACK(M.frame, shadow, M.frame);
-  lispm_frame_depth_dec(&M.frame_depth);
+  --M.lex_depth;
 
   Obj captures = NIL;
   FOR_EACH_T(var, old_assoc, shadow) {
@@ -357,10 +357,10 @@ sema_ret_apply:
   return C(lispm_make_builtin(BUILTIN_APPLY_INDEX), list_map(syn, sema));
 }
 static Obj frame_depth_guard(Obj (*op)(Obj), Obj v) {
-  LISPM_ASSERT(lispm_obj_is_shortnum(M.frame_depth));
-  unsigned orig_depth = M.frame_depth;
+  LISPM_ASSERT(lispm_obj_is_shortnum(M.lex_depth));
+  unsigned orig_depth = M.lex_depth;
   Obj res = op(v);
-  LISPM_ASSERT(orig_depth == M.frame_depth);
+  LISPM_ASSERT(orig_depth == M.lex_depth);
   return (void)orig_depth, res;
 }
 
@@ -377,10 +377,12 @@ static Obj evframe_set(Obj name, Obj val) {
   M.frame = T(name, htable_entry_set_assoc(name, val), M.frame);
   return val;
 }
-static void evframe_enter(Obj frame) {
+static Obj evframe_enter(Obj frame, Obj top) {
   FOR_EACH_T(name, val, M.frame) { htable_entry_set_assoc(name, val); }
+  C_UNPACK(gc(C(top, frame)), top, frame);
   M.frame = NIL;
   FOR_EACH_T(name, val, frame) { evframe_set(name, val); }
+  return top;
 }
 static Obj eval(Obj e);
 static Obj evquote(Obj arg) { return lispm_return0(arg); }
@@ -405,33 +407,32 @@ static Obj evletrec(Obj arg) {
   return sema_apply_lambda(lambda, exprs);
 }
 static Obj evapply(Obj expr) {
-  Obj es = list_map(expr, eval), f, args;
-  C_UNPACK(es, f, args);
+  Obj es = list_map(expr, eval), f, argv;
+  C_UNPACK(es, f, argv);
   if (lispm_obj_is_builtin(f)) return es;
 
   LISPM_EVAL_CHECK(lispm_obj_is_triplet(f), f, panic, "a function expected, got: ", f);
-  Obj captures, argf, body, frame = NIL;
-  T_UNPACK(f, captures, argf, body);
+  Obj captures, argn, body, frame = NIL;
+  T_UNPACK(f, captures, argn, body);
   FOR_EACH_T(name, val, captures) {
     if (val == lispm_make_builtin(BUILTIN_REC_INDEX)) val = evframe_get(name);
     frame = T(name, evframe_set(name, val), frame);
   }
-  Obj argv = args, name, value;
-  while (argf != NIL && argv != NIL) { /* arguments */
-    C_UNPACK(argf, name, argf);
+  Obj name, value;
+  while (argn != NIL && argv != NIL) { /* arguments */
+    C_UNPACK(argn, name, argn);
     C_UNPACK(argv, value, argv);
     frame = T(name, evframe_set(name, value), frame);
   }
-  LISPM_EVAL_CHECK(lispm_obj_is_nil(argf) && lispm_obj_is_nil(argv), f, panic,
+  LISPM_EVAL_CHECK(lispm_obj_is_nil(argn) && lispm_obj_is_nil(argv), f, panic,
                    "number of formal arguments does not match the number of passed arguments: ", f);
-  evframe_enter(frame);
-  return body;
+  return evframe_enter(frame, body);
 }
 static Obj eval(Obj syn) {
   TRACE_NATIVE_STACK();
-  unsigned mark = M.sp - M.stack;
+  unsigned old_fp = M.frame_pointer;
   Obj old_frame = M.frame, res;
-  M.frame = NIL;
+  M.frame = NIL, M.frame_pointer = gc_mark();
   for (;;) {
     Obj form, arg;
     C_UNPACK(syn, form, arg);
@@ -445,19 +446,21 @@ static Obj eval(Obj syn) {
     LISPM_EVAL_CHECK(bi->eval, form, panic, "a function expected, got: ", form);
     syn = bi->eval(arg);
   }
-  evframe_enter(NIL);
-  M.frame = old_frame;
   LISPM_EVAL_CHECK(res != lispm_make_builtin(BUILTIN_REC_INDEX), res, panic,
                    "a self-recursive definition gets evaluated", NIL);
-  return gc(res, mark);
+  res = evframe_enter(NIL, res);
+  M.frame = old_frame, M.frame_pointer = old_fp;
+  return res;
 }
 
 /* API */
 Obj lispm_eval0(void) {
-  unsigned mark = gc_mark();
+  unsigned old_fp = M.frame_pointer;
+  M.frame_pointer = gc_mark();
   Obj program = frame_depth_guard(sema, lispm_parse_quote0());
-  Obj res = frame_depth_guard(eval, program);
-  return gc(res, mark);
+  Obj res = gc(eval(program));
+  M.frame_pointer = old_fp;
+  return res;
 }
 
 int lispm_init(void) {
@@ -467,8 +470,8 @@ int lispm_init(void) {
                            hence no value can have a zero offset into the strings table */
   M.htable_index_size = (M.htable_end - M.htable) >> 1;
   M.htable_index_shift = lispm_intrinsic_leading_zeros(M.htable_index_size) + 1;
+  M.lex_depth = 1;
   M.frame = NIL;
-  M.frame_depth = lispm_make_shortnum(1);
 
   const unsigned bilen = lispm_intrinsic_builtin_size();
   if (M.sp - (M.stack + LISPM_STACK_BOTTOM_OFFSET) < bilen) return 0;

@@ -32,19 +32,6 @@ enum {
 };
 static inline int lispm_obj_is_htable_error(LispmObj o) { return (o & 255u) == 35u; }
 
-/* frame depth handling */
-static inline int lispm_is_frame_depth(LispmObj o) {
-  return lispm_obj_is_shortnum(o) && 0 < lispm_shortnum_val(o) && lispm_shortnum_val(o) < ~(~0u >> 4);
-}
-static inline void lispm_frame_depth_inc(LispmObj *frame_depth) {
-  LISPM_ASSERT(lispm_is_frame_depth(*frame_depth) && lispm_is_frame_depth(*frame_depth + 4));
-  *frame_depth += 4;
-}
-static inline void lispm_frame_depth_dec(LispmObj *frame_depth) {
-  LISPM_ASSERT(lispm_is_frame_depth(*frame_depth) && lispm_is_frame_depth(*frame_depth - 4));
-  *frame_depth -= 4;
-}
-
 /* semantic analysis */
 enum {
   LISPM_LEX_UNBOUND = 15u,
