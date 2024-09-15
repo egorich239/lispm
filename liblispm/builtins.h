@@ -26,6 +26,11 @@ enum LispmBuiltinFlags {
    * Marks a syntax extension.
    */
   LISPM_BUILTIN_SYNTAX = 8u,
+
+  /**
+   * Marks a type tag extension, `aux` is a destructor, invoked by GC.
+   */
+  LISPM_BUILTIN_TYPETAG = 16u,
 };
 
 /**

@@ -29,12 +29,12 @@ static Obj CDR(Obj a) { return CONS_UNPACK(a, 0); }
 static Obj ATOM(Obj a) {
   Obj arg;
   LISPM_EVAL_CHECK(lispm_list_scan(&arg, a, 1) == 1, a, panic, "single arguments expected, got: ", a);
-  return lispm_return0(lispm_obj_is_atom(arg) ? lispm_obj_from_builtin(BUILTIN_T) : NIL);
+  return lispm_return0(lispm_obj_is_atom(arg) ? lispm_builtin_literal(BUILTIN_T) : NIL);
 }
 static Obj EQ(Obj a) {
   Obj xy[2];
   LISPM_EVAL_CHECK(lispm_list_scan(xy, a, 2) == 2, a, panic, "two arguments expected, got: ", a);
-  return lispm_return0(lispm_obj_is_atom(xy[0]) && xy[0] == xy[1] ? lispm_obj_from_builtin(BUILTIN_T) : NIL);
+  return lispm_return0(lispm_obj_is_atom(xy[0]) && xy[0] == xy[1] ? lispm_builtin_literal(BUILTIN_T) : NIL);
 }
 
 typedef enum { OP_OR, OP_AND, OP_XOR, OP_ADD, OP_SUB, OP_MUL } BinOp;
@@ -43,10 +43,10 @@ static int binop_unpack(Obj args, int arith, Obj *p, Obj *q) {
   const unsigned argc = lispm_list_scan(pqm, args, arith ? 3 : 2);
   LISPM_EVAL_CHECK(((argc == 2) || (arith && argc == 3)) && lispm_obj_is_shortnum(pqm[0]) &&
                        lispm_obj_is_shortnum(pqm[1]) &&
-                       (lispm_obj_is_nil(pqm[2]) || lispm_obj_from_builtin(BUILTIN_MODULO) == pqm[2]),
+                       (lispm_obj_is_nil(pqm[2]) || lispm_builtin_literal(BUILTIN_MODULO) == pqm[2]),
                    args, panic, "p, q[, :modulo] expected, got: ", args);
   *p = pqm[0], *q = pqm[1];
-  return lispm_obj_from_builtin(BUILTIN_MODULO) == pqm[2];
+  return lispm_builtin_literal(BUILTIN_MODULO) == pqm[2];
 }
 static Obj binop(Obj args, BinOp op, int arith) {
   Obj p, q;

@@ -109,9 +109,13 @@ static inline int lispm_obj_is_special(LispmObj s) { return (s & 3u) == 3u; }
 
 
 /**
- * Returns object, corresponding to a given builtin.
+ * Returns literal, corresponding to a given builtin.
  */
-LispmObj lispm_obj_from_builtin(const struct LispmBuiltin *bi);
+LispmObj lispm_builtin_literal(const struct LispmBuiltin *bi);
+/**
+ * Returns value, associated with the builtin literal.
+ */
+LispmObj lispm_builtin_value(const struct LispmBuiltin *bi);
 
 /**
  * Allocates object of kind `k` on the stack.
