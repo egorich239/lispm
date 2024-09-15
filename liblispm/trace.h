@@ -24,7 +24,6 @@ extern struct LispmTraceCallbacks lispm_trace;
   } while (0)
 #else
 #define LISPM_ASSERT(cond) ((void)(0))
-// #define LISPM_ASSERT(cond) if (!(cond)) __builtin_unreachable();
 #endif
 
 /* Unlike LISPM_ASSERT, these errors are caused by a bug in the user code. */
